@@ -177,10 +177,10 @@ def _qr_image_data_url(uid: str) -> str:
 
 
 def _qr_status(uid: str, t: str, sign: str) -> dict:
-    """轮询扫码状态。115 该接口为长轮询，无事件时约 60s 返回空 data；这里用 30s
-    超时，超时即视为「等待扫码」。返回完整响应 {state, code, message, data}。"""
+    """轮询扫码状态（仅用于展示「已扫描/过期」）。115 该接口为长轮询，这里用 10s
+    超时；登录成功的判定靠 ``_qr_result`` 直接取 Cookie，不依赖此接口的 status 字段。"""
     raw, _ = _qr_request("GET", "/get/status/",
-                         params={"uid": uid, "time": t, "sign": sign}, timeout=30)
+                         params={"uid": uid, "time": t, "sign": sign}, timeout=10)
     return json.loads(raw)
 
 
@@ -217,7 +217,7 @@ class TgSearch115(_PluginBase):
         "订阅新增时优先到指定 Telegram 频道搜索 115 资源，命中并转存成功后自动完成订阅；"
         "未命中或转存失败则平滑回退到 MoviePilot 默认站点搜索。"
     )
-    plugin_version = "2.1.5"
+    plugin_version = "2.1.6"
     plugin_author = "MoviePilot User"
     plugin_icon = "T"
     plugin_config_prefix = "plugin.tgsearch115"
@@ -729,15 +729,26 @@ class TgSearch115(_PluginBase):
             return JSONResponse({"status": -99, "msg": "缺少 uid/sign", "login_ok": False}, status_code=400)
         _msg_map = {0: "等待扫码", 1: "已扫描，请在手机上确认", 2: "已确认登录",
                     -1: "二维码已过期", -2: "已取消", -99: "异常"}
+        # 1) 先直接尝试取 Cookie。115 在用户手机端确认后，qrcode_result 即可拿到含
+        #    UID/CID/SEID 的 Cookie；这样不依赖 status 响应里可能缺失的 status 字段，
+        #    避免出现「已确认但前端一直等待」的问题。未确认时返回空，无副作用。
+        try:
+            cookie_raw = _qr_result(uid, app)
+        except Exception:
+            cookie_raw = ""
+        cookie_str = _pick_uid_cid_seid(cookie_raw)
+        if cookie_str:
+            cfg = self.get_data(CONFIG_KEY) or self._default_config()
+            cfg["p115_cookie"] = cookie_str
+            cfg["p115_app"] = _qr_normalize_app(app)
+            self.save_data(CONFIG_KEY, cfg)
+            self.init_plugin(cfg)
+            return JSONResponse({"status": 2, "msg": "扫码登录成功，Cookie 已保存并生效", "login_ok": True})
+        # 2) 未确认：查状态用于展示（等待/已扫描/过期）
         try:
             resp = _qr_status(uid, str(time or ""), sign)
-        except Exception:
-            # 115 状态接口为长轮询，超时（无扫码事件）视为「等待扫码」，不报错
-            return JSONResponse({"status": 0, "msg": "等待扫码", "login_ok": False})
-        try:
             data = resp.get("data") if isinstance(resp, dict) else None
             data = data or {}
-            # status 可能在 data.status、顶层 status，或缺失（长轮询无事件返回空 data）
             status = data.get("status")
             if status is None:
                 status = resp.get("status") if isinstance(resp, dict) else None
@@ -746,27 +757,10 @@ class TgSearch115(_PluginBase):
             status = int(status)
             msg = (data.get("msg") or (resp.get("message") if isinstance(resp, dict) else "")
                    or _msg_map.get(status, ""))
-            result = {
-                "status": status,
-                "msg": msg,
-                "login_ok": False,
-            }
-            if status == 2:
-                cookie = _qr_result(uid, app)
-                if _pick_uid_cid_seid(cookie):  # 校验含 UID/CID/SEID
-                    cfg = self.get_data(CONFIG_KEY) or self._default_config()
-                    cfg["p115_cookie"] = cookie
-                    cfg["p115_app"] = _qr_normalize_app(app)
-                    self.save_data(CONFIG_KEY, cfg)
-                    self.init_plugin(cfg)
-                    result["login_ok"] = True
-                    result["msg"] = "扫码登录成功，Cookie 已保存并生效"
-                else:
-                    result["msg"] = "扫码已确认但未提取到完整 Cookie（UID/CID/SEID）"
-            return JSONResponse(result)
-        except Exception as e:
-            logger.error(f"【TG115】查询 115 扫码状态失败: {e}")
-            return JSONResponse({"status": -99, "msg": f"状态查询失败: {e}", "login_ok": False}, status_code=500)
+            return JSONResponse({"status": status, "msg": msg, "login_ok": False})
+        except Exception:
+            # 状态接口长轮询超时（无事件），视为等待
+            return JSONResponse({"status": 0, "msg": "等待扫码", "login_ok": False})
 
     # ============================ 依赖检查 ============================
     def _check_deps(self):
