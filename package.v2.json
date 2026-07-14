@@ -3,10 +3,11 @@
     "name": "拦截mp订阅",
     "description": "订阅新增时优先到指定 Telegram 频道搜索 115 资源，命中并转存成功后自动完成订阅；未命中或转存失败则平滑回退到 MoviePilot 默认站点搜索。",
     "labels": "订阅,Telegram,115网盘",
-    "version": "2.1.6",
+    "version": "2.1.7",
     "author": "MoviePilot User",
     "level": 2,
     "history": {
+      "v2.1.7": "修复扫码登录成功后仍取不到 Cookie：_qr_request 改用 get_all 收集所有 Set-Cookie 头（UID/CID/SEID 可能分多个头，原 get 只取第一个导致漏检）；增加 qrcode_result 原始响应日志便于排查。",
       "v2.1.6": "修复扫码登录成功后插件仍显示等待：改为每次轮询直接调 qrcode_result 取 Cookie（不依赖 115 status 字段，避免二维码被消费后 status 返回空 data 导致漏检）；状态接口超时缩短到 10s。",
       "v2.1.5": "修复扫码 500：115 token 接口改用 GET（POST 返回空导致 json 解析失败）；从 data.uid/time/sign 读取；状态接口长轮询超时视为等待中而非报错；前端展示后端错误明细。",
       "v2.1.4": "扫码端下拉调整：Windows/macOS/Linux 改用 os_windows/os_mac/os_linux 标识；115网盘系列标签改为 115_苹果端/115_安卓端/115_苹果平板端。另：prebuild 改用 clean.js 手动递归清理 dist（Node fs.rmSync 在 Windows 静默失败，导致旧 hash 产物残留）。",

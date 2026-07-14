@@ -157,7 +157,10 @@ def _qr_request(method: str, path: str, params: dict = None, data: dict = None,
     req = _urlreq.Request(url, data=body, headers=hdrs, method=method)
     with _urlreq.urlopen(req, timeout=timeout) as resp:
         raw = resp.read().decode("utf-8", "replace")
-        set_cookie = resp.headers.get("Set-Cookie", "") or ""
+        # UID/CID/SEID 可能分别落在多个 Set-Cookie 头里，必须用 get_all 取全部，
+        # 否则 headers.get 只返回第一个，会漏掉 CID/SEID 导致 Cookie 提取失败。
+        set_cookies = resp.headers.get_all("Set-Cookie") or []
+        set_cookie = "; ".join(set_cookies)
         return raw, set_cookie
 
 
@@ -197,15 +200,14 @@ def _pick_uid_cid_seid(text: str) -> str:
     return ""
 
 
-def _qr_result(uid: str, app: str) -> str:
-    """扫码确认后获取 Cookie（含 UID/CID/SEID），失败返回空串。"""
+def _qr_result(uid: str, app: str):
+    """扫码确认后获取 Cookie：POST /app/1.0/{app}/1.0/login/qrcode/，返回 (raw_body, set_cookie)。"""
     a = _qr_normalize_app(app)
     ua = _QR_UA_MAP.get((app or "").strip().lower(), "Mozilla/5.0 (MoviePilot-TgSearch115)")
-    raw, set_cookie = _qr_request(
+    return _qr_request(
         "POST", f"/app/1.0/{a}/1.0/login/qrcode/",
         data={"account": uid}, headers={"User-Agent": ua}, timeout=15,
     )
-    return _pick_uid_cid_seid(raw + "\n" + set_cookie)
 
 
 class TgSearch115(_PluginBase):
@@ -217,7 +219,7 @@ class TgSearch115(_PluginBase):
         "订阅新增时优先到指定 Telegram 频道搜索 115 资源，命中并转存成功后自动完成订阅；"
         "未命中或转存失败则平滑回退到 MoviePilot 默认站点搜索。"
     )
-    plugin_version = "2.1.6"
+    plugin_version = "2.1.7"
     plugin_author = "MoviePilot User"
     plugin_icon = "T"
     plugin_config_prefix = "plugin.tgsearch115"
@@ -733,10 +735,13 @@ class TgSearch115(_PluginBase):
         #    UID/CID/SEID 的 Cookie；这样不依赖 status 响应里可能缺失的 status 字段，
         #    避免出现「已确认但前端一直等待」的问题。未确认时返回空，无副作用。
         try:
-            cookie_raw = _qr_result(uid, app)
-        except Exception:
-            cookie_raw = ""
-        cookie_str = _pick_uid_cid_seid(cookie_raw)
+            raw, set_cookie = _qr_result(uid, app)
+        except Exception as e:
+            raw, set_cookie = "", ""
+            logger.warn(f"【TG115】qrcode_result 请求异常: {e}")
+        logger.info(f"【TG115】qrcode_result app={app} uid={uid[:10]}.. => "
+                    f"raw={raw[:300]} set_cookie={set_cookie[:150]}")
+        cookie_str = _pick_uid_cid_seid(raw + "\n" + set_cookie)
         if cookie_str:
             cfg = self.get_data(CONFIG_KEY) or self._default_config()
             cfg["p115_cookie"] = cookie_str
@@ -744,6 +749,9 @@ class TgSearch115(_PluginBase):
             self.save_data(CONFIG_KEY, cfg)
             self.init_plugin(cfg)
             return JSONResponse({"status": 2, "msg": "扫码登录成功，Cookie 已保存并生效", "login_ok": True})
+        # 注意：「老乡验证失败」(errno 40101017) 在未扫码时也会返回，故不据此中断轮询；
+        # 若手机端确认后仍持续返回该错误，说明 115 异地风控拒绝下发 Cookie，需改用 Cookie
+        # 登录。具体见 MP 日志里 qrcode_result 的原始响应。
         # 2) 未确认：查状态用于展示（等待/已扫描/过期）
         try:
             resp = _qr_status(uid, str(time or ""), sign)
