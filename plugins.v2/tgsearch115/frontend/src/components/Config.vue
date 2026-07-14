@@ -310,6 +310,8 @@
           <v-select
             v-model="qrApp"
             :items="qrApps"
+            item-title="title"
+            item-value="value"
             label="登录端"
             density="compact"
             variant="outlined"
@@ -384,7 +386,23 @@ const pendingDelete = ref(null)
 
 // 115 扫码登录
 const qrDialog = ref(false)
-const qrApps = ['web', 'tv', 'ipad', 'android', 'ios', 'alipaymini']
+// 115 支持的登录端（friendly 标题 -> app 值，值与 p115client.p115qrcode.APP_TO_SSOENT 一致）
+const qrApps = [
+  { title: '115 网页端', value: 'web' },
+  { title: '115生活_苹果端', value: 'ios' },
+  { title: '115网盘_苹果端', value: '115ios' },
+  { title: '115生活_安卓端', value: 'android' },
+  { title: '115网盘_安卓端', value: '115android' },
+  { title: '115生活_苹果平板端', value: 'ipad' },
+  { title: '115网盘_苹果平板端', value: '115ipad' },
+  { title: '115生活_TV端', value: 'tv' },
+  { title: '115生活_Windows端', value: 'windows' },
+  { title: '115生活_macOS端', value: 'mac' },
+  { title: '115生活_Linux端', value: 'linux' },
+  { title: '115生活_微信小程序端', value: 'wechatmini' },
+  { title: '115生活_支付宝小程序端', value: 'alipaymini' },
+  { title: '115_鸿蒙端', value: 'harmony' },
+]
 const qrApp = ref('web')
 const qrData = reactive({ uid: '', time: '', sign: '', qrcode_url: '', app: 'web' })
 const qrMsg = ref('')
@@ -445,10 +463,7 @@ function applyConfig(cfg) {
 }
 
 onMounted(async () => {
-  if (props.initialConfig) {
-    applyConfig(props.initialConfig)
-    return
-  }
+  // get_form 返回空桩，MP 传入的 initialConfig 为空；始终从 /config/get 读取真实保存的配置
   await loadConfig()
 })
 

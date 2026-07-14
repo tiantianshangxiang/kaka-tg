@@ -216,7 +216,7 @@ class TgSearch115(_PluginBase):
         "订阅新增时优先到指定 Telegram 频道搜索 115 资源，命中并转存成功后自动完成订阅；"
         "未命中或转存失败则平滑回退到 MoviePilot 默认站点搜索。"
     )
-    plugin_version = "2.1.1"
+    plugin_version = "2.1.2"
     plugin_author = "MoviePilot User"
     plugin_icon = "T"
     plugin_config_prefix = "plugin.tgsearch115"
@@ -319,11 +319,14 @@ class TgSearch115(_PluginBase):
         """
         # 路径与官方插件仓 agentresourceofficer 保持一致：get/save 拆成独立路径，
         # 避免 MoviePilot 插件路由对「同路径不同方法」的兼容性差异。
-        return [
+        # 鉴权：MP 自定义前端 props.api 默认携带 Authorization: Bearer <用户令牌>，
+        # 故端点统一用 "bear"(verify_token) 鉴权；若用默认 apikey 鉴权，前端调用会 401。
+        apis = [
             {
                 "path": "/config/get",
                 "endpoint": self.__get_config_api,
                 "methods": ["GET"],
+                "auth": "bear",
                 "summary": "获取插件配置",
                 "description": "返回当前插件配置，供自定义前端 Config.vue 初始化读取",
             },
@@ -331,6 +334,7 @@ class TgSearch115(_PluginBase):
                 "path": "/config/save",
                 "endpoint": self.__save_config_api,
                 "methods": ["POST"],
+                "auth": "bear",
                 "summary": "保存插件配置",
                 "description": "保存配置并即时生效（写入 get_data 并重新 init_plugin）",
             },
@@ -338,18 +342,21 @@ class TgSearch115(_PluginBase):
                 "path": "/check_channel",
                 "endpoint": self.__check_channel_api,
                 "methods": ["GET"],
+                "auth": "bear",
                 "summary": "检查指定 TG 频道连通性",
             },
             {
                 "path": "/check_all",
                 "endpoint": self.__check_all_api,
                 "methods": ["GET"],
+                "auth": "bear",
                 "summary": "检查所有 TG 频道连通性",
             },
             {
                 "path": "/qrcode/get",
                 "endpoint": self.__qrcode_get_api,
                 "methods": ["GET"],
+                "auth": "bear",
                 "summary": "获取 115 登录二维码",
                 "description": "GET /qrcode/get?app=web|tv|ipad|android|ios，返回二维码图片(data URL)及会话凭证",
             },
@@ -357,10 +364,12 @@ class TgSearch115(_PluginBase):
                 "path": "/qrcode/status",
                 "endpoint": self.__qrcode_status_api,
                 "methods": ["GET"],
+                "auth": "bear",
                 "summary": "轮询 115 扫码状态",
                 "description": "GET /qrcode/status?uid=&time=&sign=&app=，扫码成功时自动提取并保存 Cookie",
             },
         ]
+        return apis
 
     def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
         """配置页由自定义 Vue 前端（Config.vue）接管，这里返回空桩。
