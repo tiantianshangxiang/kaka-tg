@@ -24,6 +24,7 @@ export default defineConfig({
     target: 'esnext',
     minify: false,
     cssCodeSplit: true,
+    emptyOutDir: true, // 构建前清空 dist，避免旧 hash 产物残留成孤儿文件
   },
   css: {
     postcss: {

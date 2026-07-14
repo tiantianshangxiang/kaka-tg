@@ -3,10 +3,11 @@
     "name": "拦截mp订阅",
     "description": "订阅新增时优先到指定 Telegram 频道搜索 115 资源，命中并转存成功后自动完成订阅；未命中或转存失败则平滑回退到 MoviePilot 默认站点搜索。",
     "labels": "订阅,Telegram,115网盘",
-    "version": "2.1.0",
+    "version": "2.1.1",
     "author": "MoviePilot User",
     "level": 2,
     "history": {
+      "v2.1.1": "修复前端构建产物残留：vite.config 启用 emptyOutDir，清理 2.1.0 构建遗留的旧 hash 孤儿文件。",
       "v2.1.0": "新增 115 多端扫码登录（GET /qrcode/get、GET /qrcode/status），扫码成功自动提取含 UID/CID/SEID 的 Cookie 并保存生效；直连 115 稳定二维码接口，仅用标准库、不随 p115client 版本波动；新增 p115client/telethon 依赖动态静默安装；修复配置页空白（重写 get_render_mode 声明 vue 渲染模式）。",
       "v2.0.0": "重构为自定义 Vue 前端架构：配置页由 Module Federation（dist/remoteEntry.js）暴露的 Config.vue 渲染，详情页由 Page.vue 渲染；后端改用 get_data/save_data 持久化并提供 RESTful 接口（/config/get、/config/save、/check_channel、/check_all）；三段式布局（115 登录 + TG 机器人模块 + TG 频道模块），频道支持单条添加、批量导入、二次确认删除。业务流程不变。",
       "v1.0.4": "TG 频道改为独立卡片式管理：每个频道一张卡片，可单独开启/关闭、检查连通性、删除；支持手动添加与 JSON 批量导入。",
