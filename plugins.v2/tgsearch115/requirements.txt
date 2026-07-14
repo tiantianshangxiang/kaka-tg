@@ -1,0 +1,13 @@
+# MoviePilot 插件 tgsearch115 运行依赖
+# 安装方式：在 MoviePilot 容器内执行
+#   pip install telethon p115client
+# 或将本文件放到插件目录，由 MoviePilot 自动安装（插件市场规范）。
+
+# Telethon：以 User Session 读取 TG 频道历史消息并检索
+telethon>=1.36.0
+
+# p115client：调用 115 分享链接转存（share_receive）
+p115client>=0.9.7
+
+# 可选：使用 SOCKS 代理连接 Telegram 时需要（即 telethon[socks]）
+# python-socks>=2.4.0
