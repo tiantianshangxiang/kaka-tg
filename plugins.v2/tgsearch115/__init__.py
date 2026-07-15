@@ -221,7 +221,7 @@ class TgSearch115(_PluginBase):
         "订阅新增时优先到指定 Telegram 频道搜索 115 资源，命中并转存成功后自动完成订阅；"
         "未命中或转存失败则平滑回退到 MoviePilot 默认站点搜索。"
     )
-    plugin_version = "3.2.1"
+    plugin_version = "3.2.2"
     plugin_author = "MoviePilot User"
     plugin_icon = "T"
     plugin_config_prefix = "plugin.tgsearch115"
@@ -544,9 +544,10 @@ class TgSearch115(_PluginBase):
 
     @staticmethod
     def _build_keyword(subscribe) -> str:
-        """构建搜索关键字。只用片名（不含年份），因为爬虫做整词匹配，
-        加上年份会导致消息中只有片名没有年份时漏搜。"""
-        return (subscribe.name or "").strip()
+        """构建搜索关键字：片名 + 年份（空格分隔）。
+        爬虫会拆分并要求所有部分都出现在消息中。"""
+        parts = [p for p in [subscribe.name, subscribe.year] if p]
+        return " ".join(parts)
 
     @staticmethod
     def _build_torrents(hits) -> List[TorrentInfo]:
