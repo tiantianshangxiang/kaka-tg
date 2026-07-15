@@ -425,11 +425,6 @@ const pluginBase = computed(() => `plugin/${props.pluginId || 'TgSearch115'}`)
 // 默认配置结构（与后端 _default_config 一致）
 const DEFAULTS = {
   enabled: false,
-  tg_api_id: '',
-  tg_api_hash: '',
-  tg_session: '',
-  tg_max_messages: 200,
-  tg_proxy: '',
   p115_cookie: '',
   p115_target: '/电影',
   use_rule_groups: true,

@@ -1,5 +1,5 @@
 # MoviePilot 插件 tgsearch115 运行依赖
-# Docker 内手动安装：docker exec -it moviepilot pip install telethon p115client
+# Docker 内手动安装：docker exec -it moviepilot pip install beautifulsoup4 p115client
 
 # BeautifulSoup4：解析 TG 网页预览版 HTML
 beautifulsoup4>=4.12

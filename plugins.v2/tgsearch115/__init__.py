@@ -17,7 +17,7 @@
    ``SubscribeAdded`` 是实现该目标的正确且唯一的钩子。
 
 2. TG 搜索：用 Telethon User Session 读取目标频道历史消息，按订阅标题/年份检索，
-   提取其中的 115 分享链接（见 ``tg_searcher.py``）。支持多频道。
+   提取其中的 115 分享链接（见 ``tg_scraper.py``）。支持多频道。
 
 3. 规则匹配：每条命中构造为 ``TorrentInfo``，复用 MoviePilot 内置的
    ``SubscribeChain().filter_torrents`` 与 ``TorrentHelper.filter_torrent``，
@@ -221,7 +221,7 @@ class TgSearch115(_PluginBase):
         "订阅新增时优先到指定 Telegram 频道搜索 115 资源，命中并转存成功后自动完成订阅；"
         "未命中或转存失败则平滑回退到 MoviePilot 默认站点搜索。"
     )
-    plugin_version = "3.1.1"
+    plugin_version = "3.1.2"
     plugin_author = "MoviePilot User"
     plugin_icon = "T"
     plugin_config_prefix = "plugin.tgsearch115"
@@ -240,7 +240,6 @@ class TgSearch115(_PluginBase):
     _p115_cookie = ""
     _p115_app = ""
     _p115_target = "/"
-    _tg_proxy = ""  # deprecated, kept for compat
     _use_rule_groups = True
     _delay_seconds = 3
     _notify_success = True
