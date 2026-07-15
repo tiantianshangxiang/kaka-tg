@@ -1,12 +1,11 @@
 # MoviePilot 插件 tgsearch115 运行依赖
 # Docker 内手动安装：docker exec -it moviepilot pip install telethon p115client
 
-# Telethon：以 User Session 读取 TG 频道历史消息并检索
-telethon>=1.36.0
+# BeautifulSoup4：解析 TG 网页预览版 HTML
+beautifulsoup4>=4.12
 
 # p115client：调用 115 分享链接转存（share_receive）
 # 注意：p115client 采用 0.0.9.x 版本号；0.0.9+ 需要 Python>=3.12（MoviePilot 容器为 3.12，满足）
 p115client>=0.0.9
 
-# 可选：使用 SOCKS 代理连接 Telegram 时需要（即 telethon[socks]）
-# python-socks>=2.4.0
+# httpx 已随 p115client 安装，无需单独列出

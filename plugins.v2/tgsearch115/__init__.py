@@ -54,7 +54,7 @@
 """
 # ============================ 依赖动态静默安装 ============================
 # MoviePilot 运行在 Docker 容器内，容器重启后手动 pip 安装的第三方依赖会丢失。
-# 这里在导入业务包之前检测 p115client / telethon，缺失则用当前解释器静默安装，
+# 这里在导入业务包之前检测 p115client / beautifulsoup4，缺失则用当前解释器静默安装，
 # 实现「开箱即用」。安装失败不阻断插件加载（业务模块均为懒导入，缺依赖时仅在
 # 实际调用时报错并由上层捕获后平滑回退，不影响 MoviePilot 主流程）。
 import subprocess as _subprocess
@@ -63,7 +63,7 @@ import sys as _sys
 
 def _ensure_deps() -> None:
     missing = []
-    for _mod, _pkg in (("p115client", "p115client"), ("telethon", "telethon")):
+    for _mod, _pkg in (("p115client", "p115client"), ("bs4", "beautifulsoup4")):
         try:
             __import__(_mod)
         except ImportError:
@@ -104,7 +104,7 @@ from app.plugins import _PluginBase
 from app.schemas.types import EventType, NotificationType, SystemConfigKey
 
 from .p115_transfer import P115Transfer
-from .tg_searcher import TgChannelSearcher
+from .tg_scraper import TgChannelScraper
 
 
 # get_data / save_data 存储本插件配置使用的 key
@@ -221,7 +221,7 @@ class TgSearch115(_PluginBase):
         "订阅新增时优先到指定 Telegram 频道搜索 115 资源，命中并转存成功后自动完成订阅；"
         "未命中或转存失败则平滑回退到 MoviePilot 默认站点搜索。"
     )
-    plugin_version = "2.2.13"
+    plugin_version = "3.0.0"
     plugin_author = "MoviePilot User"
     plugin_icon = "T"
     plugin_config_prefix = "plugin.tgsearch115"
@@ -232,16 +232,11 @@ class TgSearch115(_PluginBase):
     _enabled = False
     _lock = threading.Lock()
     _running_ids: set = set()
-    _searcher: Optional[TgChannelSearcher] = None
+    _scraper: Optional[TgChannelScraper] = None
     _transfer: Optional[P115Transfer] = None
 
     # 配置项（运行态缓存）
-    _tg_api_id = 0
-    _tg_api_hash = ""
-    _tg_session = ""
     _tg_channels: List[Dict[str, Any]] = []
-    _tg_max_messages = 200
-    _tg_proxy = ""
     _p115_cookie = ""
     _p115_app = ""
     _p115_target = "/"
@@ -279,11 +274,6 @@ class TgSearch115(_PluginBase):
     def _apply_config(self, config: dict):
         """把配置字典解析到运行态字段，并重建搜索器 / 转存器。"""
         self._enabled = self._to_bool(config.get("enabled"), False)
-        self._tg_api_id = self._safe_int(config.get("tg_api_id"), 0)
-        self._tg_api_hash = config.get("tg_api_hash") or ""
-        self._tg_session = config.get("tg_session") or ""
-        self._tg_max_messages = self._safe_int(config.get("tg_max_messages"), 200)
-        self._tg_proxy = config.get("tg_proxy") or ""
         # 如果用户没配 TG 代理，自动用 MoviePilot 的代理（settings.PROXY）
         if not self._tg_proxy:
             try:
@@ -305,16 +295,16 @@ class TgSearch115(_PluginBase):
         # TG 频道列表：自定义前端直接以数组/JSON 字符串形式提交 tg_channels
         self._tg_channels = self._parse_channels(config.get("tg_channels"))
 
-        # 搜索器只接收「已启用」的频道
+        # 爬虫只接收「已启用」的频道；代理自动用 MP 的 settings.PROXY
         enabled_channels = [ch for ch in self._tg_channels if ch.get("enabled", True)]
-        self._searcher = TgChannelSearcher(
-            api_id=self._tg_api_id,
-            api_hash=self._tg_api_hash,
-            session_string=self._tg_session,
-            channels=enabled_channels,
-            max_messages=self._tg_max_messages,
-            proxy=self._tg_proxy,
-        )
+        _proxy = ""
+        try:
+            _mp_proxy = settings.PROXY
+            if _mp_proxy:
+                _proxy = _mp_proxy.get("https") or _mp_proxy.get("http") or ""
+        except Exception:
+            pass
+        self._scraper = TgChannelScraper(channels=enabled_channels, proxy=_proxy)
         self._transfer = P115Transfer(
             cookie=self._p115_cookie, default_target_path=self._p115_target
         )
@@ -507,7 +497,7 @@ class TgSearch115(_PluginBase):
 
             keyword = self._build_keyword(subscribe)
             logger.info(f"【TG115】订阅 [{subscribe.name}] 开始搜索 TG 频道，关键字: {keyword}")
-            hits = self._searcher.search(keyword) if self._searcher else []
+            hits = self._scraper.search(keyword) if self._scraper else []
             if not hits:
                 logger.info(f"【TG115】订阅 [{subscribe.name}] TG 频道未找到 115 资源，回退到默认搜索")
                 self._notify_fail(subscribe, "TG 频道未找到 115 资源")
@@ -692,11 +682,9 @@ class TgSearch115(_PluginBase):
         if index < 0 or index >= len(channels):
             return JSONResponse({"success": False, "message": "频道序号无效"})
         ch = channels[index]
-        if not self._searcher or not (
-            self._searcher.api_id and self._searcher.api_hash and self._searcher.session_string
-        ):
-            return JSONResponse({"success": False, "message": "TG 配置不完整（api_id/api_hash/session）"})
-        ok, msg = self._searcher.check_channel(ch["id"])
+        if not self._scraper:
+            return JSONResponse({"success": False, "message": "未配置任何频道"})
+        ok, msg = self._scraper.check_channel(ch["id"])
         return JSONResponse({"success": ok, "message": f"[{ch.get('name') or ch['id']}] {msg}"})
 
     def __check_all_api(self):
@@ -705,13 +693,11 @@ class TgSearch115(_PluginBase):
         channels = self._tg_channels or []
         if not channels:
             return JSONResponse({"success": False, "message": "未配置任何频道"})
-        if not self._searcher or not (
-            self._searcher.api_id and self._searcher.api_hash and self._searcher.session_string
-        ):
-            return JSONResponse({"success": False, "message": "TG 配置不完整（api_id/api_hash/session）"})
+        if not self._scraper:
+            return JSONResponse({"success": False, "message": "未配置任何频道"})
         results = []
         for ch in channels:
-            ok, msg = self._searcher.check_channel(ch["id"])
+            ok, msg = self._scraper.check_channel(ch["id"])
             results.append({
                 "name": ch.get("name") or ch["id"], "id": ch["id"],
                 "enabled": ch.get("enabled", True), "ok": ok, "message": msg,
@@ -836,12 +822,12 @@ class TgSearch115(_PluginBase):
         keyword = (keyword or "").strip()
         if not keyword:
             return JSONResponse({"success": False, "message": "请输入搜索关键字"}, status_code=400)
-        if not self._searcher or not (self._tg_api_id and self._tg_api_hash and self._tg_session):
-            return JSONResponse({"success": False, "message": "TG 配置不完整（需要 api_id/api_hash/session）"}, status_code=400)
+        if not self._scraper or not self._tg_channels:
+            return JSONResponse({"success": False, "message": "未配置任何 TG 频道"}, status_code=400)
         logger.info(f"【TG115】手动搜索 keyword={keyword} proxy={self._tg_proxy or "无"} channels={len(self._tg_channels)}")
         try:
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-                hits = ex.submit(self._searcher.search, keyword).result(timeout=180)
+                hits = ex.submit(self._scraper.search, keyword).result(timeout=180)
             results = [{
                 "title": h.resource_title or "未命名资源",
                 "share_url": h.share_url,
@@ -934,9 +920,9 @@ class TgSearch115(_PluginBase):
     def _check_deps(self):
         missing = []
         try:
-            import telethon  # noqa: F401
+            import bs4  # noqa: F401
         except Exception:
-            missing.append("telethon")
+            missing.append("beautifulsoup4")
         try:
             import p115client  # noqa: F401
         except Exception:
@@ -947,8 +933,7 @@ class TgSearch115(_PluginBase):
             ok, msg = P115Transfer.validate_cookie(self._p115_cookie)
             if not ok:
                 logger.warn(f"【TG115】115 Cookie 校验: {msg}")
-        if not (self._tg_api_id and self._tg_api_hash and self._tg_session):
-            logger.warn("【TG115】TG 搜索配置不完整（需要 api_id/api_hash/session）")
+        # TG 爬虫无需额外配置（只需频道列表 + 网络/代理）
         if self._tg_channels and not any(ch.get("enabled", True) for ch in self._tg_channels):
             logger.warn("【TG115】所有 TG 频道均已关闭，订阅将直接回退到默认搜索")
 
@@ -958,11 +943,6 @@ class TgSearch115(_PluginBase):
         """首次加载 / 无配置时返回的默认结构，供前端初始化。"""
         return {
             "enabled": False,
-            "tg_api_id": "",
-            "tg_api_hash": "",
-            "tg_session": "",
-            "tg_max_messages": 200,
-            "tg_proxy": "",
             "p115_cookie": "",
             "p115_app": "",
             "p115_target": "/电影",

@@ -57,6 +57,37 @@
             <v-btn variant="outlined" prepend-icon="mdi-folder-open" @click="openDirBrowser('target')">选择目录</v-btn>
           </v-col>
         </v-row>
+        <v-divider class="my-3" />
+        <div class="section-label mb-2">插件设置</div>
+        <v-row>
+          <v-col cols="12" md="6" class="d-flex align-center">
+            <div class="mr-2">
+              <div class="text-subtitle-2">功能总开关</div>
+              <div class="text-caption text-medium-emphasis">开启后监听订阅新增事件并自动检索 TG 频道</div>
+            </div>
+            <v-spacer />
+            <v-switch v-model="config.enabled" color="primary" hide-details density="compact" />
+          </v-col>
+          <v-col cols="12" md="6" class="d-flex align-center">
+            <div class="mr-2">
+              <div class="text-subtitle-2">MP 过滤规则组二次匹配</div>
+              <div class="text-caption text-medium-emphasis">复用 MoviePilot 订阅过滤规则组</div>
+            </div>
+            <v-spacer />
+            <v-switch v-model="config.use_rule_groups" color="primary" hide-details density="compact" />
+          </v-col>
+          <v-col cols="12" md="4">
+            <v-text-field v-model="config.delay_seconds" label="触发延迟（秒）" variant="outlined" density="comfortable" type="number" hide-details hint="订阅创建后等待几秒再触发" persistent-hint />
+          </v-col>
+          <v-col cols="12" md="4" class="d-flex align-center">
+            <span class="text-body-2 mr-2">转存成功通知</span>
+            <v-switch v-model="config.notify_success" color="primary" hide-details density="compact" />
+          </v-col>
+          <v-col cols="12" md="4" class="d-flex align-center">
+            <span class="text-body-2 mr-2">未命中通知</span>
+            <v-switch v-model="config.notify_fail" color="primary" hide-details density="compact" />
+          </v-col>
+        </v-row>
       </v-card-text>
     </v-card>
 
@@ -64,7 +95,6 @@
     <v-card variant="outlined" rounded="lg" class="tg115-card">
       <v-tabs v-model="activeTab" color="primary" density="comfortable" class="px-2">
         <v-tab value="transfer" prepend-icon="mdi-cloud-download-outline">手动转存</v-tab>
-        <v-tab value="bot" prepend-icon="mdi-robot-outline">TG 机器人模块</v-tab>
         <v-tab value="search" prepend-icon="mdi-magnify">手动搜索</v-tab>
         <v-tab value="channel" prepend-icon="mdi-bullhorn-outline">TG 频道模块</v-tab>
       </v-tabs>
@@ -105,122 +135,6 @@
             class="mt-3"
             :text="transferResult.message"
           />
-        </v-window-item>
-
-        <!-- ====== Tab 1：TG 机器人模块 ====== -->
-        <v-window-item value="bot" class="pa-4">
-          <v-row>
-            <v-col cols="12" md="6" class="d-flex align-center">
-              <div class="mr-2">
-                <div class="text-subtitle-2">功能总开关</div>
-                <div class="text-caption text-medium-emphasis">开启后监听订阅新增事件并自动检索 TG 频道</div>
-              </div>
-              <v-spacer />
-              <v-switch v-model="config.enabled" color="primary" hide-details density="compact" />
-            </v-col>
-            <v-col cols="12" md="6" class="d-flex align-center">
-              <div class="mr-2">
-                <div class="text-subtitle-2">MP 过滤规则组二次匹配</div>
-                <div class="text-caption text-medium-emphasis">复用 MoviePilot 订阅过滤规则组对命中资源再过滤</div>
-              </div>
-              <v-spacer />
-              <v-switch v-model="config.use_rule_groups" color="primary" hide-details density="compact" />
-            </v-col>
-          </v-row>
-
-          <div class="section-label mt-4 mb-2">Telegram 会话凭证（User Session）</div>
-          <v-row>
-            <v-col cols="12" md="6">
-              <v-text-field
-                v-model="config.tg_api_id"
-                label="TG API ID"
-                variant="outlined"
-                density="comfortable"
-                hint="在 my.telegram.org 申请的 API ID（数字）"
-                persistent-hint
-              />
-            </v-col>
-            <v-col cols="12" md="6">
-              <v-text-field
-                v-model="config.tg_api_hash"
-                :type="showSecrets ? 'text' : 'password'"
-                label="TG API Hash"
-                variant="outlined"
-                density="comfortable"
-                hint="在 my.telegram.org 申请的 API Hash"
-                persistent-hint
-                :append-inner-icon="showSecrets ? 'mdi-eye-off' : 'mdi-eye'"
-                @click:append-inner="showSecrets = !showSecrets"
-              />
-            </v-col>
-            <v-col cols="12">
-              <v-text-field
-                v-model="config.tg_session"
-                :type="showSecrets ? 'text' : 'password'"
-                label="TG Session String"
-                variant="outlined"
-                density="comfortable"
-                hint="用 gen_tg_session.py 在本地生成后粘贴（容器内无法交互登录）"
-                persistent-hint
-                :append-inner-icon="showSecrets ? 'mdi-eye-off' : 'mdi-eye'"
-                @click:append-inner="showSecrets = !showSecrets"
-              />
-            </v-col>
-          </v-row>
-
-          <v-row>
-            <v-col cols="12" md="4">
-              <v-text-field
-                v-model="config.tg_proxy"
-                label="TG 代理"
-                variant="outlined"
-                density="comfortable"
-                placeholder="socks5://host:port"
-                hint="可选；SOCKS 需另装 telethon[socks]"
-                persistent-hint
-              />
-            </v-col>
-            <v-col cols="12" md="4">
-              <v-text-field
-                v-model="config.tg_max_messages"
-                label="最大检索消息数"
-                variant="outlined"
-                density="comfortable"
-                type="number"
-                hint="每个频道最多检索的历史消息数"
-                persistent-hint
-              />
-            </v-col>
-            <v-col cols="12" md="4">
-              <v-text-field
-                v-model="config.delay_seconds"
-                label="触发延迟（秒）"
-                variant="outlined"
-                density="comfortable"
-                type="number"
-                hint="订阅创建后等待几秒再触发"
-                persistent-hint
-              />
-            </v-col>
-          </v-row>
-
-          <div class="section-label mt-2 mb-1">通知</div>
-          <v-row>
-            <v-col cols="12" md="6" class="d-flex align-center">
-              <span class="text-body-2 mr-2">转存成功通知</span>
-              <v-switch v-model="config.notify_success" color="primary" hide-details density="compact" />
-            </v-col>
-            <v-col cols="12" md="6" class="d-flex align-center">
-              <span class="text-body-2 mr-2">未命中 / 失败通知</span>
-              <v-switch v-model="config.notify_fail" color="primary" hide-details density="compact" />
-            </v-col>
-          </v-row>
-
-          <div class="d-flex justify-end mt-4">
-            <v-btn color="primary" variant="flat" :loading="saving" prepend-icon="mdi-content-save" @click="saveAll">
-              保存该模块配置
-            </v-btn>
-          </div>
         </v-window-item>
 
         <!-- ====== Tab：手动搜索 ====== -->
