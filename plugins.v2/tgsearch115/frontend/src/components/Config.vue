@@ -57,37 +57,6 @@
             <v-btn variant="outlined" prepend-icon="mdi-folder-open" @click="openDirBrowser('target')">选择目录</v-btn>
           </v-col>
         </v-row>
-        <v-divider class="my-3" />
-        <div class="section-label mb-2">插件设置</div>
-        <v-row>
-          <v-col cols="12" md="6" class="d-flex align-center">
-            <div class="mr-2">
-              <div class="text-subtitle-2">功能总开关</div>
-              <div class="text-caption text-medium-emphasis">开启后监听订阅新增事件并自动检索 TG 频道</div>
-            </div>
-            <v-spacer />
-            <v-switch v-model="config.enabled" color="primary" hide-details density="compact" />
-          </v-col>
-          <v-col cols="12" md="6" class="d-flex align-center">
-            <div class="mr-2">
-              <div class="text-subtitle-2">MP 过滤规则组二次匹配</div>
-              <div class="text-caption text-medium-emphasis">复用 MoviePilot 订阅过滤规则组</div>
-            </div>
-            <v-spacer />
-            <v-switch v-model="config.use_rule_groups" color="primary" hide-details density="compact" />
-          </v-col>
-          <v-col cols="12" md="4">
-            <v-text-field v-model="config.delay_seconds" label="触发延迟（秒）" variant="outlined" density="comfortable" type="number" hide-details hint="订阅创建后等待几秒再触发" persistent-hint />
-          </v-col>
-          <v-col cols="12" md="4" class="d-flex align-center">
-            <span class="text-body-2 mr-2">转存成功通知</span>
-            <v-switch v-model="config.notify_success" color="primary" hide-details density="compact" />
-          </v-col>
-          <v-col cols="12" md="4" class="d-flex align-center">
-            <span class="text-body-2 mr-2">未命中通知</span>
-            <v-switch v-model="config.notify_fail" color="primary" hide-details density="compact" />
-          </v-col>
-        </v-row>
       </v-card-text>
     </v-card>
 
@@ -97,6 +66,7 @@
         <v-tab value="transfer" prepend-icon="mdi-cloud-download-outline">手动转存</v-tab>
         <v-tab value="search" prepend-icon="mdi-magnify">手动搜索</v-tab>
         <v-tab value="channel" prepend-icon="mdi-bullhorn-outline">TG 频道模块</v-tab>
+        <v-tab value="settings" prepend-icon="mdi-cog-outline">插件设置</v-tab>
       </v-tabs>
       <v-divider />
 
@@ -231,6 +201,38 @@
             <v-icon icon="mdi-account-group-off-outline" size="48" class="mb-2" />
             <div class="text-body-2">暂未添加任何 TG 频道</div>
           </div>
+        </v-window-item>
+        <!-- ====== Tab：插件设置 ====== -->
+        <v-window-item value="settings" class="pa-4">
+          <div class="d-flex align-center mb-4">
+            <div class="mr-3">
+              <div class="text-subtitle-1 font-weight-bold">功能总开关</div>
+              <div class="text-caption text-medium-emphasis">开启后监听订阅新增事件并自动检索 TG 频道</div>
+            </div>
+            <v-switch v-model="config.enabled" color="primary" hide-details density="compact" />
+          </div>
+          <v-divider class="mb-4" />
+          <v-row>
+            <v-col cols="12" md="6" class="d-flex align-center">
+              <div class="mr-2">
+                <div class="text-subtitle-2">MP 过滤规则组二次匹配</div>
+                <div class="text-caption text-medium-emphasis">复用 MoviePilot 订阅过滤规则组</div>
+              </div>
+              <v-spacer />
+              <v-switch v-model="config.use_rule_groups" color="primary" hide-details density="compact" />
+            </v-col>
+            <v-col cols="12" md="6">
+              <v-text-field v-model="config.delay_seconds" label="触发延迟（秒）" variant="outlined" density="comfortable" type="number" hide-details hint="订阅创建后等待几秒再触发" persistent-hint />
+            </v-col>
+            <v-col cols="12" md="6" class="d-flex align-center">
+              <span class="text-body-2 mr-2">转存成功通知</span>
+              <v-switch v-model="config.notify_success" color="primary" hide-details density="compact" />
+            </v-col>
+            <v-col cols="12" md="6" class="d-flex align-center">
+              <span class="text-body-2 mr-2">未命中通知</span>
+              <v-switch v-model="config.notify_fail" color="primary" hide-details density="compact" />
+            </v-col>
+          </v-row>
         </v-window-item>
       </v-window>
     </v-card>

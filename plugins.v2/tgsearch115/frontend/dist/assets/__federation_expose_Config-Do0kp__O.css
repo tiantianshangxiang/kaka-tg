@@ -1,38 +1,38 @@
 
-.tg115-config[data-v-0c025e89] {
+.tg115-config[data-v-711438ae] {
   max-width: 960px;
   margin: 0 auto;
 }
-.tg115-card[data-v-0c025e89] {
+.tg115-card[data-v-711438ae] {
   background-color: rgb(var(--v-theme-surface));
   border-color: rgba(var(--v-theme-on-surface), 0.12);
 }
-.section-label[data-v-0c025e89] {
+.section-label[data-v-711438ae] {
   font-size: 0.8125rem;
   font-weight: 600;
   color: rgba(var(--v-theme-on-surface), 0.7);
 }
-.add-card[data-v-0c025e89] {
+.add-card[data-v-711438ae] {
   background-color: rgba(var(--v-theme-primary), 0.06);
 }
-.channel-list[data-v-0c025e89] {
+.channel-list[data-v-711438ae] {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
-.channel-item[data-v-0c025e89] {
+.channel-item[data-v-711438ae] {
   background-color: rgb(var(--v-theme-surface));
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
-.channel-item[data-v-0c025e89]:hover {
+.channel-item[data-v-711438ae]:hover {
   border-color: rgb(var(--v-theme-primary));
   box-shadow: 0 2px 10px rgba(var(--v-theme-on-surface), 0.08);
 }
-.channel-meta[data-v-0c025e89] {
+.channel-meta[data-v-711438ae] {
   min-width: 0;
   flex: 1 1 auto;
 }
-.empty-state[data-v-0c025e89] {
+.empty-state[data-v-711438ae] {
   text-align: center;
   padding: 36px 16px;
   color: rgba(var(--v-theme-on-surface), 0.45);
