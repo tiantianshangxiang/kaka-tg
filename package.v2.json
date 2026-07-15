@@ -3,10 +3,11 @@
     "name": "拦截mp订阅",
     "description": "订阅新增时优先到指定 Telegram 频道搜索 115 资源，命中并转存成功后自动完成订阅；未命中或转存失败则平滑回退到 MoviePilot 默认站点搜索。",
     "labels": "订阅,Telegram,115网盘",
-    "version": "2.2.8",
+    "version": "2.2.9",
     "author": "MoviePilot User",
     "level": 2,
     "history": {
+      "v2.2.9": "转存错误提示优化：分享已取消/过期时直接返回明确错误（不再报参数错误）；修复 share_info 失败后继续用 file_id=0 的问题。",
       "v2.2.8": "修复转存参数错误：先调 /share/shareinfo 获取分享内真实 file_id，再用该 file_id 调 /share/receive（file_id=0 无效）。",
       "v2.2.7": "修复 _direct_share_receive 缺少 json 导入。",
       "v2.2.6": "转存改用直连 115 /share/receive（urllib form data + cookie），绕过 p115client request 方法（可能是 JSON 格式导致参数错误）。",

@@ -109,6 +109,10 @@ class P115Transfer:
         try:
             si = self._direct_share_info(share_code)
             logger.info(f"【TG115】share_info 响应: {str(si)[:400]}")
+            # 分享已取消/过期/不存在 -> 直接返回明确错误
+            if isinstance(si, dict) and si.get("state") not in (True, 1, "1"):
+                si_err = si.get("error") or si.get("message") or "分享不可用"
+                return False, f"分享链接不可用：{si_err}", result
             si_data = si.get("data") if isinstance(si, dict) else None
             if isinstance(si_data, dict):
                 fl = si_data.get("filelist") or si_data.get("file_list") or []
