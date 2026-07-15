@@ -221,7 +221,7 @@ class TgSearch115(_PluginBase):
         "订阅新增时优先到指定 Telegram 频道搜索 115 资源，命中并转存成功后自动完成订阅；"
         "未命中或转存失败则平滑回退到 MoviePilot 默认站点搜索。"
     )
-    plugin_version = "3.1.2"
+    plugin_version = "3.2.0"
     plugin_author = "MoviePilot User"
     plugin_icon = "T"
     plugin_config_prefix = "plugin.tgsearch115"
@@ -598,28 +598,139 @@ class TgSearch115(_PluginBase):
         }.items() if v}
 
     def _finish_subscribe(self, subscribe, meta, mediainfo, torrent: TorrentInfo, transfer_msg: str):
-        """转存成功：镜像 SubscribeChain.__finish_subscribe，标记订阅完成。"""
+        """转存成功后，根据媒体类型（电影/剧集）分别处理订阅状态。
+
+        电影 (Movie)：
+          - 镜像 ``SubscribeChain.__finish_subscribe``：写历史 -> 删订阅 -> 发 SubscribeComplete 事件
+          - 通知文案：🎬 电影订阅完成：TG115 已将《标题》转存至网盘，终止后续搜索。
+
+        剧集 (TV)：
+          - **不删除订阅**（剧集可能后续还有新集）
+          - 从 TG 消息文本中正则提取集数信息（EP01-08 / 更新至05集 / 全12集 等）
+          - 调用 ``SubscribeOper().update(subscribe_id, {"lack_episode": 0})`` 更新缺失集数为 0
+          - 通知文案：📺 剧集订阅更新：TG115 已转存《标题》第N季（EP01-12 完整）。等待系统刮削入库。
+        """
+        import re as _re
         try:
             oper = SubscribeOper()
-            oper.add_history(**subscribe.to_dict())
-            oper.delete(subscribe.id)
-            eventmanager.send_event(EventType.SubscribeComplete, {
-                "subscribe_id": subscribe.id,
-                "subscribe_info": subscribe.to_dict(),
-                "mediainfo": mediainfo.to_dict() if hasattr(mediainfo, "to_dict") else {},
-            })
-            logger.info(f"【TG115】订阅 [{subscribe.name}] 已通过 TG+115 完成并标记完结")
-            if self._notify_success:
+            is_tv = (subscribe.type == "TV" or
+                     getattr(mediainfo, "type", None) == "电视剧" or
+                     getattr(meta, "type", None) == "TV")
+
+            if not is_tv:
+                # ===== 电影：标记订阅完成 =====
+                oper.add_history(**subscribe.to_dict())
+                oper.delete(subscribe.id)
+                eventmanager.send_event(EventType.SubscribeComplete, {
+                    "subscribe_id": subscribe.id,
+                    "subscribe_info": subscribe.to_dict(),
+                    "mediainfo": mediainfo.to_dict() if hasattr(mediainfo, "to_dict") else {},
+                })
+                logger.info(f"【TG115】电影订阅 [{subscribe.name}] 已通过 TG+115 完成并标记完结")
+                if self._notify_success:
+                    try:
+                        self.post_message(
+                            mtype=NotificationType.Subscribe,
+                            title=f"\U0001F3AC 电影订阅完成：{subscribe.name}",
+                            text=f"TG115 插件已成功将《{subscribe.name}》转存至网盘，终止后续搜索。\n"
+                                 f"资源: {torrent.title}\n{transfer_msg}",
+                        )
+                    except Exception:
+                        pass
+            else:
+                # ===== 剧集：更新缺失集数 + 不删订阅 =====
+                # 从 TG 消息文本中提取集数信息
+                raw_text = torrent.description or torrent.title or ""
+                episode_info = self._parse_episode_info(raw_text)
+                season_str = f"第 {subscribe.season or 1} 季" if subscribe.season else "当季"
+
+                # 更新订阅：lack_episode = 0（表示本季已完整）
+                # SubscribeOper.update(sid, payload) 调用 subscribe.update(db, payload)
+                # lack_episode 是 Subscribe 模型的 Column(Integer) 字段，设为 0 表示不缺集
                 try:
-                    self.post_message(
-                        mtype=NotificationType.Subscribe,
-                        title=f"订阅完成 {subscribe.name}",
-                        text=f"已通过 TG 频道找到 115 资源并转存完成。\n资源: {torrent.title}\n{transfer_msg}",
-                    )
-                except Exception:
-                    pass
+                    oper.update(subscribe.id, {
+                        "lack_episode": 0,
+                        "state": "P",  # P = 进行中（已完成本季但不删除，方便后续续订）
+                    })
+                    logger.info(f"【TG115】剧集订阅 [{subscribe.name}] {season_str} 已更新（"
+                                f"lack_episode=0, episode_info={episode_info}）")
+                except Exception as e:
+                    logger.warn(f"【TG115】更新剧集订阅集数失败（不影响转存结果）: {e}")
+
+                # 发送 SubscribeComplete 事件（让 MP 知道本季已完成）
+                eventmanager.send_event(EventType.SubscribeComplete, {
+                    "subscribe_id": subscribe.id,
+                    "subscribe_info": subscribe.to_dict(),
+                    "mediainfo": mediainfo.to_dict() if hasattr(mediainfo, "to_dict") else {},
+                })
+
+                if self._notify_success:
+                    try:
+                        self.post_message(
+                            mtype=NotificationType.Subscribe,
+                            title=f"\U0001F4FA 剧集订阅更新：{subscribe.name}",
+                            text=f"TG115 插件已转存《{subscribe.name}》{season_str}的资源"
+                                 f"（{episode_info}）。等待系统刮削入库。\n"
+                                 f"资源: {torrent.title}\n{transfer_msg}",
+                        )
+                    except Exception:
+                        pass
+
         except Exception as e:
             logger.error(f"【TG115】标记订阅完成异常（不影响 MP 默认流程）: {e}")
+
+    @staticmethod
+    def _parse_episode_info(text: str) -> str:
+        """从 TG 消息文本中提取剧集集数信息。
+
+        高兼容性正则，支持以下格式：
+          - "EP01-08" / "E01-08" / "EP01~08" -> "EP01-08"
+          - "更新至05集" / "更新至 5 集" -> "更新至05集"
+          - "全12集" / "全 12 集" -> "全12集（完整）"
+          - "第01-12集" / "第1-12集" -> "第01-12集"
+          - "S01E01-E12" / "S01E01-12" -> "S01E01-E12"
+          - "1-12集" / "01-12 集" -> "EP01-12"
+          - 无匹配 -> "本季合集"
+        """
+        if not text:
+            return "本季合集"
+        import re as _re
+
+        # S01E01-E12 / S01E01-12
+        m = _re.search(r'[Ss]\d{1,2}[Ee](\d{1,3})\s*[-~]\s*[Ee]?(\d{1,3})', text)
+        if m:
+            return f"EP{int(m.group(1)):02d}-{int(m.group(2)):02d}"
+
+        # EP01-08 / E01-08 / EP01~08
+        m = _re.search(r'[Ee][Pp]?(\d{1,3})\s*[-~]\s*(\d{1,3})', text)
+        if m:
+            return f"EP{int(m.group(1)):02d}-{int(m.group(2)):02d}"
+
+        # 更新至05集 / 更新至 5 集
+        m = _re.search(r'更新至\s*(\d{1,3})\s*集', text)
+        if m:
+            return f"更新至{int(m.group(1))}集"
+
+        # 全12集 / 全 12 集
+        m = _re.search(r'全\s*(\d{1,3})\s*集', text)
+        if m:
+            return f"全{int(m.group(1))}集（完整）"
+
+        # 第01-12集 / 第1-12集
+        m = _re.search(r'第\s*(\d{1,3})\s*[-~]\s*(\d{1,3})\s*集', text)
+        if m:
+            return f"第{int(m.group(1)):02d}-{int(m.group(2)):02d}集"
+
+        # 1-12集 / 01-12 集
+        m = _re.search(r'(?<![\d])(\d{1,3})\s*[-~]\s*(\d{1,3})\s*集', text)
+        if m:
+            return f"EP{int(m.group(1)):02d}-{int(m.group(2)):02d}"
+
+        # 完结 / 全集
+        if _re.search(r'完结|全集|全季', text):
+            return "全集（完结）"
+
+        return "本季合集"
 
     def _notify_fail(self, subscribe, reason: str):
         if not self._notify_fail:
