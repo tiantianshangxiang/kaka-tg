@@ -107,7 +107,7 @@ class P115Transfer:
         # 先调 shareinfo 获取分享内的真实 file_id（file_id=0 会报「参数错误」）
         file_id = 0
         try:
-            si = self._direct_share_info(share_code)
+            si = self._direct_share_info(share_code, receive_code)
             logger.info(f"【TG115】share_info 响应: {str(si)[:400]}")
             # 分享已取消/过期/不存在 -> 直接返回明确错误
             if isinstance(si, dict) and si.get("state") not in (True, 1, "1"):
@@ -148,19 +148,25 @@ class P115Transfer:
         return True, "115 转存成功", result
 
     # ============================ 内部工具 ============================
-    def _direct_share_info(self, share_code: str) -> dict:
+    def _direct_share_info(self, share_code: str, receive_code: str = "") -> dict:
         """直连 115 /share/shareinfo 获取分享文件列表（含 file_id）。
 
-        115 的 share_receive 要求 file_id 是分享内的真实文件 ID，不能用 0。
-        必须先调 shareinfo 拿到 file_id，再调 share_receive。
+        密码分享必须 POST share_code + receive_code 才能解锁，否则 115 返回
+        「分享已取消」（实为隐藏保护）。115 的 share_receive 要求 file_id 是
+        分享内的真实文件 ID，不能用 0，必须先调本接口拿到 file_id。
         """
         import urllib.request as _ureq
         import urllib.parse as _uparse
         import json as _json
-        url = "https://webapi.115.com/share/shareinfo?" + _uparse.urlencode({"share_code": share_code})
-        req = _ureq.Request(url, headers={
+        url = "https://webapi.115.com/share/shareinfo"
+        data = _uparse.urlencode({
+            "share_code": share_code,
+            "receive_code": receive_code,
+        }).encode("utf-8")
+        req = _ureq.Request(url, data=data, method="POST", headers={
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "Cookie": self.cookie,
+            "Content-Type": "application/x-www-form-urlencoded",
         })
         with _ureq.urlopen(req, timeout=30) as resp:
             return _json.loads(resp.read().decode("utf-8", "replace"))
