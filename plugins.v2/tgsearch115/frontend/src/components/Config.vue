@@ -151,7 +151,11 @@
             />
             <v-btn color="primary" variant="flat" :loading="searchLoading" prepend-icon="mdi-magnify" @click="doSearch">搜索</v-btn>
           </div>
-          <div v-if="searchResults.length" class="channel-list">
+          <div v-if="searchLoading" class="empty-state">
+            <v-progress-circular indeterminate size="40" width="3" color="primary" class="mb-3" />
+            <div class="text-body-2">正在搜索 TG 频道...</div>
+          </div>
+          <div v-else-if="searchResults.length" class="channel-list">
             <v-card v-for="(r, i) in searchResults" :key="i" variant="outlined" rounded="lg" class="channel-item">
               <div class="d-flex align-center px-3 py-2">
                 <v-icon icon="mdi-file-video-outline" color="primary" class="mr-3" />
@@ -163,7 +167,7 @@
               </div>
             </v-card>
           </div>
-          <div v-else-if="searched" class="empty-state">
+          <div v-else-if="searched && !searchLoading" class="empty-state">
             <v-icon icon="mdi-magnify-close" size="48" class="mb-2" />
             <div class="text-body-2">未找到 115 资源</div>
           </div>
