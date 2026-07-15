@@ -3,11 +3,11 @@
     "name": "拦截mp订阅",
     "description": "订阅新增时优先到指定 Telegram 频道搜索 115 资源，命中并转存成功后自动完成订阅；未命中或转存失败则平滑回退到 MoviePilot 默认站点搜索。",
     "labels": "订阅,Telegram,115网盘",
-    "version": "3.0.5",
+    "version": "3.0.6",
     "author": "MoviePilot User",
     "level": 2,
     "history": {
-      "v3.0.5": "tg_scraper 重构：pub_date 提取+兜底、Semaphore(5)+随机延迟防429、timeout=10s+全异常捕获、私有频道前置过滤。", "v3.0.4": "settings tab", "v3.0.3": "搜索 UX 优化：搜索中显示加载动画，不再立即显示未找到。", "v3.0.2": "TG 搜索改为并发（10 个频道同时抓），51 个频道从 48 秒降到 3-5 秒，解决前端超时。", "v3.0.1": "修复 _tg_proxy AttributeError 导致插件加载失败。", "v3.0.0": "重大重构：去掉 Telethon / TG API ID/Hash/Session，改用网页爬虫（httpx + BeautifulSoup）抓取 t.me/s/{channel} 公开频道，免登录零配置。自动使用 MP 代理。移除 TG 机器人模块 Tab。",
+      "v3.0.6": "搜索结果优化：显示完整资源信息（季数/分辨率/编码等）；保存上次搜索记录；提示网页预览仅显示最近约20条消息。", "v3.0.5": "tg_scraper 重构：pub_date 提取+兜底、Semaphore(5)+随机延迟防429、timeout=10s+全异常捕获、私有频道前置过滤。", "v3.0.4": "settings tab", "v3.0.3": "搜索 UX 优化：搜索中显示加载动画，不再立即显示未找到。", "v3.0.2": "TG 搜索改为并发（10 个频道同时抓），51 个频道从 48 秒降到 3-5 秒，解决前端超时。", "v3.0.1": "修复 _tg_proxy AttributeError 导致插件加载失败。", "v3.0.0": "重大重构：去掉 Telethon / TG API ID/Hash/Session，改用网页爬虫（httpx + BeautifulSoup）抓取 t.me/s/{channel} 公开频道，免登录零配置。自动使用 MP 代理。移除 TG 机器人模块 Tab。",
       "v2.2.13": "TG 搜索自动使用 MP 代理（settings.PROXY）：用户未配 tg_proxy 时自动回退到 MP 的代理服务器，解决国内连不上 Telegram 的问题。", "v2.2.12": "p115client share_snap+share_receive", "v2.2.11": "修复密码分享转存：改用 /share/snap（GET share_code+receive_code）替代 /share/shareinfo（POST 405）。snap 是 115 获取密码分享文件列表的正确接口。",
       "v2.2.10": "修复密码分享转存：share_info 改为 POST share_code+receive_code（密码分享必须带提取码解锁，否则 115 返回「分享已取消」）。",
       "v2.2.9": "转存错误提示优化：分享已取消/过期时直接返回明确错误（不再报参数错误）；修复 share_info 失败后继续用 file_id=0 的问题。",

@@ -126,20 +126,24 @@
             <div class="text-body-2">正在搜索 TG 频道...</div>
           </div>
           <div v-else-if="searchResults.length" class="channel-list">
-            <v-card v-for="(r, i) in searchResults" :key="i" variant="outlined" rounded="lg" class="channel-item">
-              <div class="d-flex align-center px-3 py-2">
-                <v-icon icon="mdi-file-video-outline" color="primary" class="mr-3" />
-                <div class="channel-meta">
-                  <div class="text-body-2 font-weight-medium text-truncate">{{ r.title }}</div>
-                  <div class="text-caption text-medium-emphasis text-truncate">{{ r.channel }} · {{ r.share_url }}</div>
+            <v-card v-for="(r, i) in searchResults" :key="i" variant="outlined" rounded="lg" class="channel-item mb-2">
+              <div class="px-3 pt-2 pb-1">
+                <div class="d-flex align-start">
+                  <v-icon icon="mdi-file-video-outline" color="primary" class="mr-3 mt-1" />
+                  <div class="channel-meta flex-grow-1">
+                    <div class="text-body-2 font-weight-medium">{{ r.title }}</div>
+                    <div class="text-caption text-medium-emphasis mt-1" style="white-space: pre-wrap; max-height: 4.5em; overflow: hidden;">{{ r.text || r.title }}</div>
+                    <div class="text-caption text-medium-emphasis mt-1">{{ r.channel }}<span v-if="r.pub_date"> · {{ r.pub_date }}</span></div>
+                  </div>
+                  <v-btn color="primary" variant="tonal" size="small" prepend-icon="mdi-cloud-download" :loading="transferLoading" @click="transferFromSearch(r.share_url)" class="ml-2 mt-1">转存</v-btn>
                 </div>
-                <v-btn color="primary" variant="tonal" size="small" prepend-icon="mdi-cloud-download" :loading="transferLoading" @click="transferFromSearch(r.share_url)">转存</v-btn>
               </div>
             </v-card>
           </div>
           <div v-else-if="searched && !searchLoading" class="empty-state">
             <v-icon icon="mdi-magnify-close" size="48" class="mb-2" />
             <div class="text-body-2">未找到 115 资源</div>
+            <div class="text-caption text-medium-emphasis mt-1">提示：网页预览版仅显示最近约 20 条消息</div>
           </div>
         </v-window-item>
 
@@ -536,8 +540,16 @@ function applyConfig(cfg) {
 
 onMounted(async () => {
   await loadConfig()
-  // 打开插件时主动验证 Cookie 是否真的生效
   if (loginOk.value) verifyCookie()
+  // 恢复上次搜索记录
+  try {
+    const saved = JSON.parse(localStorage.getItem('tg115_last_search') || 'null')
+    if (saved && saved.results && saved.results.length) {
+      searchKeyword.value = saved.kw || ''
+      searchResults.value = saved.results
+      searched.value = true
+    }
+  } catch (e) {}
 })
 
 async function loadConfig() {
@@ -667,6 +679,7 @@ async function doSearch() {
   if (res && res.success) {
     searchResults.value = res.results || []
     snack(res.message || `找到 ${searchResults.value.length} 条`)
+    try { localStorage.setItem('tg115_last_search', JSON.stringify({ kw: kw, results: searchResults.value })) } catch (e) {}
   } else {
     snack((res && res.message) || '搜索失败', 'error')
   }
