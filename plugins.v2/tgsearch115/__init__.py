@@ -221,7 +221,7 @@ class TgSearch115(_PluginBase):
         "订阅新增时优先到指定 Telegram 频道搜索 115 资源，命中并转存成功后自动完成订阅；"
         "未命中或转存失败则平滑回退到 MoviePilot 默认站点搜索。"
     )
-    plugin_version = "3.2.0"
+    plugin_version = "3.2.1"
     plugin_author = "MoviePilot User"
     plugin_icon = "T"
     plugin_config_prefix = "plugin.tgsearch115"
@@ -491,14 +491,14 @@ class TgSearch115(_PluginBase):
             hits = self._scraper.search(keyword) if self._scraper else []
             if not hits:
                 logger.info(f"【TG115】订阅 [{subscribe.name}] TG 频道未找到 115 资源，回退到默认搜索")
-                self._notify_fail(subscribe, "TG 频道未找到 115 资源")
+                self._send_fail_notify(subscribe, "TG 频道未找到 115 资源")
                 return
 
             torrents = self._build_torrents(hits)
             matched = self._filter_resources(subscribe, mediainfo, torrents)
             if not matched:
                 logger.info(f"【TG115】订阅 [{subscribe.name}] TG 资源均不符合 MP 过滤规则，回退到默认搜索")
-                self._notify_fail(subscribe, "TG 资源不符合过滤规则")
+                self._send_fail_notify(subscribe, "TG 资源不符合过滤规则")
                 return
 
             best = matched[0]
@@ -512,7 +512,7 @@ class TgSearch115(_PluginBase):
             )
             if not ok:
                 logger.warn(f"【TG115】订阅 [{subscribe.name}] 115 转存失败: {msg}，回退到默认搜索")
-                self._notify_fail(subscribe, f"115 转存失败: {msg}")
+                self._send_fail_notify(subscribe, f"115 转存失败: {msg}")
                 return
 
             self._finish_subscribe(subscribe, meta, mediainfo, best, msg)
@@ -544,8 +544,9 @@ class TgSearch115(_PluginBase):
 
     @staticmethod
     def _build_keyword(subscribe) -> str:
-        parts = [p for p in [subscribe.name, subscribe.year] if p]
-        return " ".join(parts)
+        """构建搜索关键字。只用片名（不含年份），因为爬虫做整词匹配，
+        加上年份会导致消息中只有片名没有年份时漏搜。"""
+        return (subscribe.name or "").strip()
 
     @staticmethod
     def _build_torrents(hits) -> List[TorrentInfo]:
@@ -694,7 +695,6 @@ class TgSearch115(_PluginBase):
         """
         if not text:
             return "本季合集"
-        import re as _re
 
         # S01E01-E12 / S01E01-12
         m = _re.search(r'[Ss]\d{1,2}[Ee](\d{1,3})\s*[-~]\s*[Ee]?(\d{1,3})', text)
@@ -732,7 +732,7 @@ class TgSearch115(_PluginBase):
 
         return "本季合集"
 
-    def _notify_fail(self, subscribe, reason: str):
+    def _send_fail_notify(self, subscribe, reason: str):
         if not self._notify_fail:
             return
         try:
