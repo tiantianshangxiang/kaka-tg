@@ -108,14 +108,14 @@ class P115Transfer:
         file_id = 0
         try:
             si = self._direct_share_info(share_code, receive_code)
-            logger.info(f"【TG115】share_info 响应: {str(si)[:400]}")
+            logger.info(f"【TG115】share_snap 响应: {str(si)[:400]}")
             # 分享已取消/过期/不存在 -> 直接返回明确错误
             if isinstance(si, dict) and si.get("state") not in (True, 1, "1"):
                 si_err = si.get("error") or si.get("message") or "分享不可用"
                 return False, f"分享链接不可用：{si_err}", result
             si_data = si.get("data") if isinstance(si, dict) else None
             if isinstance(si_data, dict):
-                fl = si_data.get("filelist") or si_data.get("file_list") or []
+                fl = si_data.get("list") or si_data.get("filelist") or si_data.get("file_list") or []
                 if fl and isinstance(fl[0], dict):
                     file_id = fl[0].get("fid") or fl[0].get("cid") or fl[0].get("file_id") or 0
             logger.info(f"【TG115】从分享信息提取 file_id={file_id}")
@@ -149,24 +149,24 @@ class P115Transfer:
 
     # ============================ 内部工具 ============================
     def _direct_share_info(self, share_code: str, receive_code: str = "") -> dict:
-        """直连 115 /share/shareinfo 获取分享文件列表（含 file_id）。
+        """直连 115 /share/snap 获取分享文件列表（含 file_id）。
 
-        密码分享必须 POST share_code + receive_code 才能解锁，否则 115 返回
-        「分享已取消」（实为隐藏保护）。115 的 share_receive 要求 file_id 是
-        分享内的真实文件 ID，不能用 0，必须先调本接口拿到 file_id。
+        使用 /share/snap（非 /share/shareinfo），因为 snap 支持 receive_code（密码）
+        解锁密码分享。GET 请求，params: share_code, receive_code, cid=0, limit, offset。
         """
         import urllib.request as _ureq
         import urllib.parse as _uparse
         import json as _json
-        url = "https://webapi.115.com/share/shareinfo"
-        data = _uparse.urlencode({
+        url = "https://webapi.115.com/share/snap?" + _uparse.urlencode({
             "share_code": share_code,
             "receive_code": receive_code,
-        }).encode("utf-8")
-        req = _ureq.Request(url, data=data, method="POST", headers={
+            "cid": 0,
+            "limit": 32,
+            "offset": 0,
+        })
+        req = _ureq.Request(url, headers={
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "Cookie": self.cookie,
-            "Content-Type": "application/x-www-form-urlencoded",
         })
         with _ureq.urlopen(req, timeout=30) as resp:
             return _json.loads(resp.read().decode("utf-8", "replace"))
