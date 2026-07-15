@@ -106,7 +106,7 @@ class P115Transfer:
         }
         logger.info(f"【TG115】转存 payload={payload}")
         try:
-            resp = client.share_receive(payload)
+            resp = self._direct_share_receive(share_code, receive_code, parent_id, user_id)
             logger.info(f"【TG115】share_receive 响应: {str(resp)[:300]}")
         except Exception as e:
             logger.error(f"【TG115】share_receive 异常: {e}")
@@ -130,6 +130,32 @@ class P115Transfer:
         return True, "115 转存成功", result
 
     # ============================ 内部工具 ============================
+    def _direct_share_receive(self, share_code: str, receive_code: str,
+                              cid, user_id: str, file_id=0) -> dict:
+        """直连 115 /share/receive（POST form data + cookie），绕过 p115client。
+
+        p115client 的 request 方法可能把 data 当 JSON 发，而 115 要求 form data。
+        这里用 urllib 直接发 urlencoded form data + Cookie 头，与 115 网页端一致。
+        """
+        import urllib.request as _ureq
+        import urllib.parse as _uparse
+        url = "https://webapi.115.com/share/receive"
+        data = _uparse.urlencode({
+            "share_code": share_code,
+            "receive_code": receive_code,
+            "file_id": file_id,
+            "cid": str(cid),
+            "is_check": 0,
+            "user_id": user_id,
+        }).encode("utf-8")
+        req = _ureq.Request(url, data=data, method="POST", headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Cookie": self.cookie,
+            "Content-Type": "application/x-www-form-urlencoded",
+        })
+        with _ureq.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read().decode("utf-8", "replace"))
+
     def _get_client(self):
         """延迟导入 p115client，避免插件加载期强依赖。
 
