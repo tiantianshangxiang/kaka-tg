@@ -221,7 +221,7 @@ class TgSearch115(_PluginBase):
         "订阅新增时优先到指定 Telegram 频道搜索 115 资源，命中并转存成功后自动完成订阅；"
         "未命中或转存失败则平滑回退到 MoviePilot 默认站点搜索。"
     )
-    plugin_version = "2.1.11"
+    plugin_version = "2.2.0"
     plugin_author = "MoviePilot User"
     plugin_icon = "T"
     plugin_config_prefix = "plugin.tgsearch115"
@@ -372,6 +372,22 @@ class TgSearch115(_PluginBase):
                 "auth": "bear",
                 "summary": "轮询 115 扫码状态",
                 "description": "GET /qrcode/status?uid=&time=&sign=&app=，扫码成功时自动提取并保存 Cookie",
+            },
+            {
+                "path": "/transfer",
+                "endpoint": self.__transfer_api,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "手动转存 115 分享链接",
+                "description": "GET /transfer?share_url=&target=，target 留空用默认目录",
+            },
+            {
+                "path": "/search",
+                "endpoint": self.__search_api,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "手动搜索 TG 频道 115 资源",
+                "description": "GET /search?keyword=",
             },
         ]
         return apis
@@ -751,6 +767,62 @@ class TgSearch115(_PluginBase):
         except Exception:
             # 状态接口长轮询超时（无事件），视为等待
             return JSONResponse({"status": 0, "msg": "等待扫码", "login_ok": False})
+
+    # ---------------------------- 手动转存 / 手动搜索 API ----------------------------
+    def __transfer_api(self, share_url: str = "", target: str = ""):
+        """GET /transfer?share_url=...&target=...：手动转存 115 分享链接到指定目录。
+
+        ``target`` 留空则用配置中的默认转存目录（``p115_target``）；可填路径（如 /电影）
+        或数字 cid。复用已有的 ``P115Transfer.transfer``（p115client share_receive）。
+        """
+        from starlette.responses import JSONResponse
+        share_url = (share_url or "").strip()
+        if not share_url:
+            return JSONResponse({"success": False, "message": "请输入 115 分享链接"}, status_code=400)
+        if not self._transfer or not self._p115_cookie:
+            return JSONResponse({"success": False, "message": "未配置 115 Cookie，请先扫码登录"}, status_code=400)
+        target_path = (target or "").strip() or self._p115_target
+        try:
+            ok, msg, data = self._transfer.transfer(share_url, target_path)
+            logger.info(f"【TG115】手动转存 {share_url} -> {target_path}: ok={ok} msg={msg}")
+            return JSONResponse({"success": ok, "message": msg})
+        except Exception as e:
+            logger.error(f"【TG115】手动转存异常: {e}")
+            return JSONResponse({"success": False, "message": f"转存失败: {e}"}, status_code=500)
+
+    def __search_api(self, keyword: str = ""):
+        """GET /search?keyword=...：手动搜索 TG 频道中的 115 资源。
+
+        Telethon 为异步库；搜索在独立线程中执行并新建事件循环，避免与 MoviePilot 主线程
+        的事件循环冲突（与订阅事件处理器在守护线程中跑搜索的做法一致）。FastAPI 的同步
+        端点本身跑在线程池里，阻塞等待搜索结果不会卡住主事件循环。
+        """
+        from starlette.responses import JSONResponse
+        import concurrent.futures
+        keyword = (keyword or "").strip()
+        if not keyword:
+            return JSONResponse({"success": False, "message": "请输入搜索关键字"}, status_code=400)
+        if not self._searcher or not (self._tg_api_id and self._tg_api_hash and self._tg_session):
+            return JSONResponse({"success": False, "message": "TG 配置不完整（需要 api_id/api_hash/session）"}, status_code=400)
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+                hits = ex.submit(self._searcher.search, keyword).result(timeout=180)
+            results = [{
+                "title": h.resource_title or "未命名资源",
+                "share_url": h.share_url,
+                "channel": h.channel_name or "",
+                "pub_date": h.pub_date or "",
+            } for h in hits]
+            return JSONResponse({
+                "success": True,
+                "message": f"找到 {len(results)} 条 115 资源",
+                "results": results,
+            })
+        except concurrent.futures.TimeoutError:
+            return JSONResponse({"success": False, "message": "搜索超时（TG 连接或检索过久）"}, status_code=504)
+        except Exception as e:
+            logger.error(f"【TG115】手动搜索异常: {e}")
+            return JSONResponse({"success": False, "message": f"搜索失败: {e}"}, status_code=500)
 
     # ============================ 依赖检查 ============================
     def _check_deps(self):

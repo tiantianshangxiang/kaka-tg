@@ -50,7 +50,7 @@
           <v-col cols="12" md="8">
             <v-text-field
               v-model="config.p115_target"
-              label="115 转存目标目录"
+              label="115 转存目录"
               variant="outlined"
               density="comfortable"
               hint="如 /电影；目录不存在会自动创建；也可填数字 cid"
@@ -70,12 +70,45 @@
     <!-- ============ 第 ② + ③ 段：Tabs + 内容区 ============ -->
     <v-card variant="outlined" rounded="lg" class="tg115-card">
       <v-tabs v-model="activeTab" color="primary" density="comfortable" class="px-2">
+        <v-tab value="transfer" prepend-icon="mdi-cloud-download-outline">手动转存</v-tab>
         <v-tab value="bot" prepend-icon="mdi-robot-outline">TG 机器人模块</v-tab>
+        <v-tab value="search" prepend-icon="mdi-magnify">手动搜索</v-tab>
         <v-tab value="channel" prepend-icon="mdi-bullhorn-outline">TG 频道模块</v-tab>
       </v-tabs>
       <v-divider />
 
       <v-window v-model="activeTab">
+        <!-- ====== Tab：手动转存（默认） ====== -->
+        <v-window-item value="transfer" class="pa-4">
+          <div class="section-label mb-2">手动转存 115 资源</div>
+          <v-text-field
+            v-model="transferUrl"
+            label="115 分享链接"
+            placeholder="https://115.com/s/xxxxxxxx?password=yyyy"
+            variant="outlined"
+            density="comfortable"
+            hide-details
+            class="mb-3"
+          />
+          <v-text-field
+            v-model="transferTarget"
+            :label="transferLabel"
+            placeholder="如 /电影  或  cid 数字"
+            variant="outlined"
+            density="comfortable"
+            hide-details
+            class="mb-3"
+          />
+          <v-btn color="primary" variant="flat" :loading="transferLoading" prepend-icon="mdi-cloud-download" @click="doTransfer">转存</v-btn>
+          <v-alert
+            v-if="transferResult"
+            :type="transferResult.success ? 'success' : 'error'"
+            variant="tonal"
+            class="mt-3"
+            :text="transferResult.message"
+          />
+        </v-window-item>
+
         <!-- ====== Tab 1：TG 机器人模块 ====== -->
         <v-window-item value="bot" class="pa-4">
           <v-row>
@@ -189,6 +222,38 @@
             <v-btn color="primary" variant="flat" :loading="saving" prepend-icon="mdi-content-save" @click="saveAll">
               保存该模块配置
             </v-btn>
+          </div>
+        </v-window-item>
+
+        <!-- ====== Tab：手动搜索 ====== -->
+        <v-window-item value="search" class="pa-4">
+          <div class="section-label mb-2">手动搜索 TG 频道 115 资源</div>
+          <div class="d-flex ga-2 mb-3">
+            <v-text-field
+              v-model="searchKeyword"
+              label="搜索关键字（影片名 + 年份）"
+              variant="outlined"
+              density="comfortable"
+              hide-details
+              @keyup.enter="doSearch"
+            />
+            <v-btn color="primary" variant="flat" :loading="searchLoading" prepend-icon="mdi-magnify" @click="doSearch">搜索</v-btn>
+          </div>
+          <div v-if="searchResults.length" class="channel-list">
+            <v-card v-for="(r, i) in searchResults" :key="i" variant="outlined" rounded="lg" class="channel-item">
+              <div class="d-flex align-center px-3 py-2">
+                <v-icon icon="mdi-file-video-outline" color="primary" class="mr-3" />
+                <div class="channel-meta">
+                  <div class="text-body-2 font-weight-medium text-truncate">{{ r.title }}</div>
+                  <div class="text-caption text-medium-emphasis text-truncate">{{ r.channel }} · {{ r.share_url }}</div>
+                </div>
+                <v-btn color="primary" variant="tonal" size="small" prepend-icon="mdi-cloud-download" :loading="transferLoading" @click="transferFromSearch(r.share_url)">转存</v-btn>
+              </div>
+            </v-card>
+          </div>
+          <div v-else-if="searched" class="empty-state">
+            <v-icon icon="mdi-magnify-close" size="48" class="mb-2" />
+            <div class="text-body-2">未找到 115 资源</div>
           </div>
         </v-window-item>
 
@@ -375,7 +440,7 @@ const DEFAULTS = {
 
 const config = reactive({ ...DEFAULTS })
 const channels = ref([])
-const activeTab = ref('bot')
+const activeTab = ref('transfer')
 const showSecrets = ref(false)
 const saving = ref(false)
 
@@ -406,6 +471,17 @@ const qrApps = [
   { title: '115_鸿蒙端', value: 'harmony' },
 ]
 const qrApp = ref('web')
+
+// 手动转存 / 手动搜索
+const transferUrl = ref('')
+const transferTarget = ref('')
+const transferLoading = ref(false)
+const transferResult = ref(null)
+const searchKeyword = ref('')
+const searchLoading = ref(false)
+const searchResults = ref([])
+const searched = ref(false)
+const transferLabel = computed(() => `115 转存目录（留空用默认：${config.p115_target || '/'}；也可填 cid）`)
 const qrData = reactive({ uid: '', time: '', sign: '', qrcode_url: '', app: 'web' })
 const qrMsg = ref('')
 const qrPolling = ref(false)
@@ -550,6 +626,42 @@ function closeQrcode() {
 }
 function onQrDialogToggle(v) {
   if (!v) stopQrPoll()
+}
+
+/* --------------------------- 手动转存 / 手动搜索 --------------------------- */
+async function doTransfer() {
+  const url = (transferUrl.value || '').trim()
+  if (!url) { snack('请输入 115 分享链接', 'warning'); return }
+  transferLoading.value = true
+  transferResult.value = null
+  const target = (transferTarget.value || '').trim()
+  const res = await apiGet(`/transfer?share_url=${encodeURIComponent(url)}&target=${encodeURIComponent(target)}`)
+  transferLoading.value = false
+  if (res) {
+    transferResult.value = res
+    snack(res.message || (res.success ? '转存成功' : '转存失败'), res.success ? 'success' : 'error')
+  } else {
+    transferResult.value = { success: false, message: '转存请求失败' }
+  }
+}
+async function transferFromSearch(url) {
+  transferUrl.value = url
+  await doTransfer()
+}
+async function doSearch() {
+  const kw = (searchKeyword.value || '').trim()
+  if (!kw) { snack('请输入搜索关键字', 'warning'); return }
+  searchLoading.value = true
+  searched.value = true
+  searchResults.value = []
+  const res = await apiGet(`/search?keyword=${encodeURIComponent(kw)}`)
+  searchLoading.value = false
+  if (res && res.success) {
+    searchResults.value = res.results || []
+    snack(res.message || `找到 ${searchResults.value.length} 条`)
+  } else {
+    snack((res && res.message) || '搜索失败', 'error')
+  }
 }
 
 /* --------------------------- 保存 --------------------------- */
