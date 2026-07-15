@@ -221,7 +221,7 @@ class TgSearch115(_PluginBase):
         "订阅新增时优先到指定 Telegram 频道搜索 115 资源，命中并转存成功后自动完成订阅；"
         "未命中或转存失败则平滑回退到 MoviePilot 默认站点搜索。"
     )
-    plugin_version = "3.0.0"
+    plugin_version = "3.0.1"
     plugin_author = "MoviePilot User"
     plugin_icon = "T"
     plugin_config_prefix = "plugin.tgsearch115"
@@ -240,6 +240,7 @@ class TgSearch115(_PluginBase):
     _p115_cookie = ""
     _p115_app = ""
     _p115_target = "/"
+    _tg_proxy = ""  # deprecated, kept for compat
     _use_rule_groups = True
     _delay_seconds = 3
     _notify_success = True
@@ -275,15 +276,6 @@ class TgSearch115(_PluginBase):
         """把配置字典解析到运行态字段，并重建搜索器 / 转存器。"""
         self._enabled = self._to_bool(config.get("enabled"), False)
         # 如果用户没配 TG 代理，自动用 MoviePilot 的代理（settings.PROXY）
-        if not self._tg_proxy:
-            try:
-                _mp_proxy = settings.PROXY
-                if _mp_proxy:
-                    self._tg_proxy = _mp_proxy.get("https") or _mp_proxy.get("http") or ""
-                    if self._tg_proxy:
-                        logger.info(f"【TG115】未配置 TG 代理，使用 MP 代理: {self._tg_proxy}")
-            except Exception:
-                pass
         self._p115_cookie = config.get("p115_cookie") or ""
         self._p115_app = config.get("p115_app") or ""
         self._p115_target = config.get("p115_target") or "/"
@@ -824,7 +816,7 @@ class TgSearch115(_PluginBase):
             return JSONResponse({"success": False, "message": "请输入搜索关键字"}, status_code=400)
         if not self._scraper or not self._tg_channels:
             return JSONResponse({"success": False, "message": "未配置任何 TG 频道"}, status_code=400)
-        logger.info(f"【TG115】手动搜索 keyword={keyword} proxy={self._tg_proxy or "无"} channels={len(self._tg_channels)}")
+        logger.info(f"【TG115】手动搜索 keyword={keyword} proxy={getattr(self._scraper, "proxy", "") or "无"} channels={len(self._tg_channels)}")
         try:
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
                 hits = ex.submit(self._scraper.search, keyword).result(timeout=180)
