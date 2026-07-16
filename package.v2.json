@@ -3,10 +3,11 @@
     "name": "拦截mp订阅",
     "description": "订阅新增时优先到指定 Telegram 频道搜索 115 资源，命中并转存成功后自动完成订阅；未命中或转存失败则平滑回退到 MoviePilot 默认站点搜索。",
     "labels": "订阅,Telegram,115网盘",
-    "version": "4.2.8",
+    "version": "4.2.9",
     "author": "MoviePilot User",
     "level": 2,
     "history": {
+      "v4.2.9": "完善聚影搜索卡片名称解析与展示。1)修复搜索 TG/聚影 等无 source_title 资源时详情页卡片标题空白：_parse_resource_meta(h.text or title) 提供 display_name。2)优化聚影结果显示：卡片不再以「【聚影】」开头，来源标签已显示聚影；处理返回的部分资源大小与说明混用的问题。",
       "v4.2.8": "修复观影被代理封锁的问题：TG必须走代理，但观影站的downurl接口对翻墙节点/机房IP封禁(返回403)。修改代理逻辑：观影默认直连(不再回退使用MP的全局TG代理)，输入框填 'direct' 可强制直连；填特定代理URL则走该代理。解决与TG共用同一个MP全局代理导致的403封锁。",
       "v4.2.7": "集成聚影开发者API：新增juying_scraper，支持通过AppID+API Key调用官方/api/dev/search/aggregate/接口获取全网盘资源，不受IP封锁和PoW验证限制。配置页新增「聚影」Tab并支持独立连通性测试。搜索来源选择器同步增加「聚影」选项。返回资源与观影/TG同构，支持115转存与磁力提取。",
       "v4.2.6": "观影域名可配置：site_scraper的硬编码SITE_BASE改为实例属性self.site_base(可传site_base参数)，观影Tab新增「观影站点域名」输入框，换域名时填这里不用改代码。留空用默认xn--wcv59z.com，自动去末尾/。/check_site测试也支持传域名(site_domain参数)。",

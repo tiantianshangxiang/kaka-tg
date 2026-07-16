@@ -198,7 +198,7 @@ class TgSearch115(_PluginBase):
         "订阅新增时优先到指定 Telegram 频道搜索 115 资源，命中并转存成功后自动完成订阅；"
         "未命中或转存失败则平滑回退到 MoviePilot 默认站点搜索。"
     )
-    plugin_version = "4.2.8"
+    plugin_version = "4.2.9"
     plugin_author = "MoviePilot User"
     plugin_icon = "T"
     plugin_config_prefix = "plugin.tgsearch115"
@@ -299,10 +299,13 @@ class TgSearch115(_PluginBase):
         self._juying_app_id = config.get("juying_app_id") or ""
         self._juying_api_key = config.get("juying_api_key") or ""
         self._juying_domain = (config.get("juying_domain") or "").strip()
+        # 聚影也加专用代理机制，逻辑同观影
+        jp = (config.get("juying_proxy") or "").strip()
+        self._juying_proxy = None if jp == 'direct' else (jp or None)
         if self._juying_enabled and self._juying_app_id and self._juying_api_key and self._juying_domain:
             self._juying_api = JuyingApi(
                 app_id=self._juying_app_id, api_key=self._juying_api_key,
-                domain=self._juying_domain, proxy=self._site_proxy,
+                domain=self._juying_domain, proxy=self._juying_proxy,
             )
         else:
             self._juying_api = None
@@ -1295,7 +1298,7 @@ class TgSearch115(_PluginBase):
         akey = (api_key or "").strip()
         dom = (domain or "").strip() or self._juying_domain
         if aid or akey:
-            api = JuyingApi(app_id=aid, api_key=akey, domain=dom, proxy=self._site_proxy)
+            api = JuyingApi(app_id=aid, api_key=akey, domain=dom, proxy=self._juying_proxy)
             ok, msg = api.check()
             return JSONResponse({"success": ok, "message": msg})
         if not self._juying_api:
@@ -1346,6 +1349,7 @@ class TgSearch115(_PluginBase):
             "juying_app_id": "",
             "juying_api_key": "",
             "juying_domain": "",
+            "juying_proxy": "",
             "tg_channels": [],
         }
 
