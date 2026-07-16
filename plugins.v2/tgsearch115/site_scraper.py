@@ -104,71 +104,43 @@ class FilejinScraper:
     """目标资源站爬虫：解 PoW -> 搜索 -> 提取全网盘资源。"""
 
     def __init__(self, app_auth: str = "", proxy: Optional[str] = None,
-                 max_search_hits: int = 3) -> None:
+                 count: int = 3) -> None:
         self.app_auth = (app_auth or "").strip()
         self.proxy = (proxy or "").strip() or None
-        self.max_search_hits = max_search_hits
+        self.count = count  # 每次（每页）取多少部作品的网盘资源
+        self._http = None            # 持久 httpx.Client（复用 PoW 会话）
         self._pow_solved = False
+        self._cache_key = None       # (keyword, year) 缓存键
+        self._cache_items = None     # search_suggest 作品列表缓存
 
     def is_ready(self) -> bool:
         return bool(self.app_auth)
 
     # ============================ 同步入口 ============================
-    def search(self, keyword: str, year: Optional[int] = None) -> List[SiteHit]:
-        """搜索关键字，返回所有网盘资源命中（含 115 / 夸克 / 百度 / ...）。
+    def search(self, keyword: str, year: Optional[int] = None,
+               offset: int = 0, count: Optional[int] = None) -> Tuple[List[SiteHit], bool]:
+        """搜索关键字，返回 (命中列表, 是否还有更多)。
 
-        :param year: 订阅流程传入年份，用于从搜索建议里精确匹配同名作品，
-            避免把模糊匹配到的其它作品资源混入。手动搜索不传，取前 N 条。
+        按 search_suggest 返回的作品分批：每批 count 部作品的网盘资源。
+        offset=0 取首批，offset=N 取第 N 批。作品列表按 keyword+year 缓存，
+        同一关键字翻页时复用缓存与 PoW 会话，不重复请求 search_suggest。
+
+        :param year: 订阅流程传入年份，精确匹配同名作品，避免模糊匹配混入。
         """
         if not self.is_ready():
             logger.warn("【TG115】资源站未配置 app_auth，跳过")
-            return []
+            return [], False
         term = (keyword or "").strip()
         if not term:
-            return []
+            return [], False
+        cnt = count or self.count
         try:
-            return self._do_search(term, year=year)
-        except Exception as e:
-            logger.error(f"【TG115】资源站搜索失败: {e}")
-            return []
-
-    def check(self) -> Tuple[bool, str]:
-        """检查站点连通性 + 登录态（解 PoW 后尝试一次搜索）。"""
-        if not self.is_ready():
-            return False, "未配置 app_auth"
-        try:
-            with self._make_client() as client:
-                self._client = client
-                self._ensure_access()
-                # 试搜一个常见词验证登录态
-                ok, msg, _ = self._search_suggest("测试")
-                if not ok and "未登录" in msg:
-                    return False, "app_auth 已失效（站点返回未登录）"
-                return True, "连通正常，登录态有效"
-        except Exception as e:
-            return False, f"检查异常: {e}"
-
-    # ============================ 内部实现 ============================
-    def _do_search(self, term: str, year: Optional[int] = None) -> List[SiteHit]:
-        with self._make_client() as client:
-            self._client = client
-            self._ensure_access()
-            ok, msg, items = self._search_suggest(term)
-            if not ok:
-                logger.warn(f"【TG115】资源站搜索 '{term}' 失败: {msg}")
-                return []
-            # 年份精确匹配（订阅流程）：只取年份匹配的作品，避免模糊匹配混入其它作品资源
-            if year:
-                yr = str(year)
-                year_items = [it for it in items if str(it.get("year", "")) == yr]
-                if year_items:
-                    items = year_items
-            logger.info(
-                f"【TG115】资源站搜索 '{term}' 命中 {len(items)} 部作品"
-                + (f"（年份 {year} 匹配）" if year else "")
-            )
-            all_hits: List[SiteHit] = []
-            for it in items[: self.max_search_hits]:
+            items = self._get_items(term, year)
+            if items is None:
+                return [], False
+            batch = items[offset:offset + cnt]
+            hits: List[SiteHit] = []
+            for it in batch:
                 dir_ = str(it.get("dir") or "")
                 id_ = str(it.get("id") or "")
                 if not dir_ or not id_:
@@ -177,14 +149,62 @@ class FilejinScraper:
                 for ph in pan_hits:
                     ph.source_title = str(it.get("title") or "")
                     ph.year = it.get("year")
-                all_hits.extend(pan_hits)
+                hits.extend(pan_hits)
                 if pan_hits:
                     n115 = sum(1 for h in pan_hits if h.is_115)
                     logger.info(
                         f"【TG115】资源站 [{it.get('title')}] ({dir_}/{id_}) "
                         f"共 {len(pan_hits)} 条网盘资源，其中 115 {n115} 条"
                     )
-            return all_hits
+            has_more = (offset + cnt) < len(items)
+            return hits, has_more
+        except Exception as e:
+            logger.error(f"【TG115】资源站搜索失败: {e}")
+            return [], False
+
+    def check(self) -> Tuple[bool, str]:
+        """检查站点连通性 + 登录态（解 PoW 后尝试一次搜索）。"""
+        if not self.is_ready():
+            return False, "未配置 app_auth"
+        try:
+            self._ensure_access()
+            ok, msg, _ = self._search_suggest("测试")
+            if not ok and "未登录" in msg:
+                return False, "app_auth 已失效（站点返回未登录）"
+            return True, "连通正常，登录态有效"
+        except Exception as e:
+            return False, f"检查异常: {e}"
+
+    # ============================ 内部实现 ============================
+    def _get_client(self):
+        """懒加载持久 httpx.Client（带 Cookie + 代理）。PoW 会话复用，翻页不重建。"""
+        if self._http is None:
+            self._http = self._make_client()
+        return self._http
+
+    def _get_items(self, term: str, year: Optional[int]):
+        """获取 search_suggest 作品列表，按 (keyword, year) 缓存。失败返回 None。"""
+        key = (term, year)
+        if self._cache_key == key and self._cache_items is not None:
+            return self._cache_items
+        self._ensure_access()
+        ok, msg, items = self._search_suggest(term)
+        if not ok:
+            logger.warn(f"【TG115】资源站搜索 '{term}' 失败: {msg}")
+            return None
+        # 年份精确匹配（订阅流程）
+        if year:
+            yr = str(year)
+            year_items = [it for it in items if str(it.get("year", "")) == yr]
+            if year_items:
+                items = year_items
+        logger.info(
+            f"【TG115】资源站搜索 '{term}' 命中 {len(items)} 部作品"
+            + (f"（年份 {year} 匹配）" if year else "")
+        )
+        self._cache_key = key
+        self._cache_items = items
+        return items
 
     def _ensure_access(self):
         """确保 PoW 已解（拿到 browser_verified）。app_auth 失效则告警。"""
@@ -194,7 +214,7 @@ class FilejinScraper:
         self._pow_solved = True
         # 解完 PoW 后探一次首页确认登录态
         try:
-            resp = self._client.get(SITE_BASE + "/", headers={"Accept": "text/html"})
+            resp = self._get_client().get(SITE_BASE + "/", headers={"Accept": "text/html"})
             if "未登录" in resp.text:
                 logger.warn("【TG115】资源站 app_auth 已失效（返回未登录），请更新 app_auth")
         except Exception:
@@ -205,10 +225,10 @@ class FilejinScraper:
         import json as _json
         # 先 GET / 触发 browser_pow cookie
         try:
-            self._client.get(SITE_BASE + "/", headers={"Accept": "text/html"})
+            self._get_client().get(SITE_BASE + "/", headers={"Accept": "text/html"})
         except Exception:
             pass
-        resp = self._client.get(SITE_BASE + "/res/pow", headers={"Accept": "application/json"})
+        resp = self._get_client().get(SITE_BASE + "/res/pow", headers={"Accept": "application/json"})
         if resp.status_code != 200:
             logger.warn(f"【TG115】资源站取 PoW 挑战失败: HTTP {resp.status_code}")
             return
@@ -227,7 +247,7 @@ class FilejinScraper:
         # y = x^(2^t) mod N —— C 层快速模幂，t=200000 约 1.5s
         y = pow(x, 1 << t, N)
         y_hex = format(y, "x")
-        resp = self._client.post(
+        resp = self._get_client().post(
             SITE_BASE + "/res/pow",
             data={"y": y_hex},
             headers={"Content-Type": "application/x-www-form-urlencoded",
@@ -245,7 +265,7 @@ class FilejinScraper:
     def _search_suggest(self, term: str):
         """GET /res/search_suggest?q= -> 作品列表。返回 (ok, msg, items)。"""
         url = SITE_BASE + "/res/search_suggest?q=" + quote(term)
-        resp = self._client.get(url, headers={"Accept": "application/json"})
+        resp = self._get_client().get(url, headers={"Accept": "application/json"})
         if resp.status_code != 200:
             return False, f"HTTP {resp.status_code}", []
         text = resp.text or ""
@@ -253,7 +273,7 @@ class FilejinScraper:
             # cookie 失效，重解 PoW 再试一次
             self._pow_solved = False
             self._ensure_access()
-            resp = self._client.get(url, headers={"Accept": "application/json"})
+            resp = self._get_client().get(url, headers={"Accept": "application/json"})
             text = resp.text or ""
         if "未登录" in text:
             return False, "未登录（app_auth 失效）", []
@@ -268,7 +288,7 @@ class FilejinScraper:
     def _fetch_panlist(self, dir_: str, id_: str) -> List[SiteHit]:
         """GET /res/downurl/{dir}/{id} -> 提取 panlist 全部网盘链接。"""
         url = f"{SITE_BASE}/res/downurl/{dir_}/{id_}"
-        resp = self._client.get(url, headers={"Accept": "application/json"})
+        resp = self._get_client().get(url, headers={"Accept": "application/json"})
         if resp.status_code != 200:
             logger.warn(f"【TG115】资源站 downurl {dir_}/{id_} 失败: HTTP {resp.status_code}")
             return []

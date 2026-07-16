@@ -225,7 +225,7 @@ class TgSearch115(_PluginBase):
         "订阅新增时优先到指定 Telegram 频道搜索 115 资源，命中并转存成功后自动完成订阅；"
         "未命中或转存失败则平滑回退到 MoviePilot 默认站点搜索。"
     )
-    plugin_version = "4.1.6"
+    plugin_version = "4.1.7"
     plugin_author = "MoviePilot User"
     plugin_icon = "T"
     plugin_config_prefix = "plugin.tgsearch115"
@@ -517,7 +517,8 @@ class TgSearch115(_PluginBase):
             if self._scraper:
                 hits.extend(self._scraper.search(keyword))
             if self._site_scraper:
-                hits.extend(self._site_scraper.search(keyword, year=subscribe.year))
+                site_hits, _ = self._site_scraper.search(keyword, year=subscribe.year)
+                hits.extend(site_hits)
             if not hits:
                 logger.info(f"【TG115】订阅 [{subscribe.name}] 未找到资源，回退到默认搜索")
                 self._send_fail_notify(subscribe, "TG 频道与资源站均未找到资源")
@@ -1069,11 +1070,12 @@ class TgSearch115(_PluginBase):
             logger.error(f"【TG115】手动转存异常: {e}")
             return JSONResponse({"success": False, "message": f"转存失败: {e}"}, status_code=500)
 
-    def __search_api(self, keyword: str = ""):
-        """GET /search?keyword=...：手动搜索 TG 频道 + 目标资源站的网盘资源。
+    def __search_api(self, keyword: str = "", offset: int = 0):
+        """GET /search?keyword=...&offset=N：手动搜索 TG 频道 + 目标资源站的网盘资源。
 
         返回全部网盘类型（115/夸克/百度/阿里/迅雷…），前端按类型展示；仅 115 可自动转存。
-        搜索在独立线程池执行，不阻塞 FastAPI 主事件循环。
+        offset 用于资源站翻页（按作品分批，每批 3 部）；TG 仅在首批(offset=0)搜索一次。
+        返回 has_more 标记是否还有更多资源站作品可翻页。搜索在独立线程池执行，不阻塞主循环。
         """
         from starlette.responses import JSONResponse
         import concurrent.futures
@@ -1082,18 +1084,25 @@ class TgSearch115(_PluginBase):
             return JSONResponse({"success": False, "message": "请输入搜索关键字"}, status_code=400)
         if (not self._scraper or not self._tg_channels) and not self._site_scraper:
             return JSONResponse({"success": False, "message": "未配置任何搜索源（TG 频道或资源站）"}, status_code=400)
+        try:
+            offset = int(offset or 0)
+        except Exception:
+            offset = 0
 
         def _do_search():
             hits = []
-            if self._scraper:
+            has_more = False
+            # TG 仅首批搜索一次（已抓全 max_pages 页）；翻页(offset>0)只追加资源站作品
+            if self._scraper and offset == 0:
                 hits.extend(self._scraper.search(keyword))
             if self._site_scraper:
-                hits.extend(self._site_scraper.search(keyword))
-            return hits
+                site_hits, has_more = self._site_scraper.search(keyword, offset=offset, count=3)
+                hits.extend(site_hits)
+            return hits, has_more
 
         try:
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-                hits = ex.submit(_do_search).result(timeout=180)
+                hits, has_more = ex.submit(_do_search).result(timeout=180)
             results = []
             for h in hits:
                 pt = getattr(h, "pan_type", "") or ""
@@ -1114,12 +1123,13 @@ class TgSearch115(_PluginBase):
                     "pub_date": h.pub_date or "",
                     "text": (h.text or "")[:500],
                 })
-            # 排序：完结优先，然后按最大集数降序（电影无集数则保持原序）
+            # 排序：完结优先，然后按最大集数降序
             results.sort(key=lambda r: (r["is_complete"], r["episode_num"]), reverse=True)
             return JSONResponse({
                 "success": True,
                 "message": f"找到 {len(results)} 条资源",
                 "results": results,
+                "has_more": has_more,
             })
         except concurrent.futures.TimeoutError:
             return JSONResponse({"success": False, "message": "搜索超时（连接或检索过久）"}, status_code=504)

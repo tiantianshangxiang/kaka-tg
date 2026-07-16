@@ -3,10 +3,11 @@
     "name": "拦截mp订阅",
     "description": "订阅新增时优先到指定 Telegram 频道搜索 115 资源，命中并转存成功后自动完成订阅；未命中或转存失败则平滑回退到 MoviePilot 默认站点搜索。",
     "labels": "订阅,Telegram,115网盘",
-    "version": "4.1.6",
+    "version": "4.1.7",
     "author": "MoviePilot User",
     "level": 2,
     "history": {
+      "v4.1.7": "详情页搜索加「查看更多历史」翻页：site_scraper重构为持久httpx client+缓存作品列表(翻页复用PoW会话不重复解算)，search支持offset分批返回(hits,has_more)；/search API加offset参数(TG仅首批搜索，翻页只追加资源站作品)；前端底部加按钮，点击追加下一批作品资源并全局重排(完结优先)，has_more控制显隐。持久化缓存含offset/has_more。",
       "v4.1.6": "详情页搜索结果持久化：搜索成功后存localStorage，离开详情页再回来自动恢复上次结果(无需重新搜索)，新搜索覆盖旧结果。标题栏加「清除」按钮可手动清空。",
       "v4.1.5": "扩展资源格式标识全量匹配：source增加WEBRip/BDRip/BRRip/HDTV/DVDRip/DVDScr/CAM/TC/TS/PDTV/SATRip等电影常见来源；新增编码字段(H265/x265/HEVC/AVC)与HDR/杜比视界(HDR10/DV)；元信息行展示「清晰度 来源 编码 HDR」。名称截断点同步加入格式关键词，避免CAM/TS等混入片名。纯后端改动，前端无需重建。",
       "v4.1.4": "详情页搜索结果卡片改用解析后的展示：标题显示「片名 (年份)」，下方元信息行显示「完结 - S01E177  4K  WEB-DL」(状态/集数/清晰度/来源)。结果排序改为完结优先+集数降序。后端/search新增_parse_resource_meta解析+排序。",

@@ -18,11 +18,20 @@ const _hoisted_7 = {
   class: "text-caption text-primary font-weight-medium mt-1"
 };
 const _hoisted_8 = { class: "text-caption text-medium-emphasis mt-1" };
+const _hoisted_9 = {
+  key: 0,
+  class: "d-flex justify-center mt-4"
+};
+const _hoisted_10 = {
+  key: 1,
+  class: "text-center text-caption text-medium-emphasis mt-3"
+};
 
 const {computed,onMounted,reactive,ref} = await importShared('vue');
 
 
 const CACHE_KEY = 'tg115_search_cache';
+const PAGE_SIZE = 3;  // 资源站每批作品数（与后端 count=3 一致）
 
 const _sfc_main = {
   __name: 'Page',
@@ -52,13 +61,16 @@ function loadCache() {
     return c && Array.isArray(c.results) ? c : null
   } catch { return null }
 }
-function saveCache(kw, res) {
-  try { localStorage.setItem(CACHE_KEY, JSON.stringify({ keyword: kw, results: res, ts: Date.now() })); } catch {}
+function saveCache(c) {
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify({ ...c, ts: Date.now() })); } catch {}
 }
 const _init = loadCache();
 const keyword = ref(_init ? _init.keyword : '');
 const results = ref(_init ? _init.results : []);
+const offset = ref(_init ? _init.offset || 0 : 0);
+const hasMore = ref(_init ? !!_init.has_more : false);
 const searching = ref(false);
+const loadingMore = ref(false);
 const searchMsg = ref(_init ? `已恢复上次搜索「${_init.keyword}」的结果（${_init.results.length} 条）` : '');
 const searchOk = ref(!!_init);
 const transferringIdx = ref(-1);
@@ -69,6 +81,8 @@ function clearResults() {
   searchMsg.value = '';
   searchOk.value = false;
   keyword.value = '';
+  offset.value = 0;
+  hasMore.value = false;
   try { localStorage.removeItem(CACHE_KEY); } catch {}
 }
 // snackbar
@@ -94,7 +108,9 @@ async function doSearch() {
       results.value = Array.isArray(data.results) ? data.results : [];
       searchMsg.value = data.message || `找到 ${results.value.length} 条`;
       searchOk.value = true;
-      saveCache(kw, results.value);
+      offset.value = 0;
+      hasMore.value = !!data.has_more;
+      saveCache({ keyword: kw, results: results.value, offset: 0, has_more: hasMore.value });
     } else {
       results.value = [];
       searchMsg.value = (data && data.message) || '搜索失败';
@@ -109,9 +125,35 @@ async function doSearch() {
   }
 }
 
+// 加载更多：资源站翻页（下一批作品），追加结果并全局重排（完结优先）
+async function loadMore() {
+  if (!hasMore.value || loadingMore.value || !props.api?.get) return
+  loadingMore.value = true;
+  try {
+    const next = offset.value + PAGE_SIZE;
+    const res = await props.api.get(`plugin/${PID.value}/search?keyword=${encodeURIComponent(keyword.value)}&offset=${next}`);
+    const data = res && typeof res === 'object' && 'data' in res && ('success' in res || 'code' in res) ? res.data : res;
+    if (data && data.success) {
+      const more = Array.isArray(data.results) ? data.results : [];
+      results.value = [...results.value, ...more];
+      offset.value = next;
+      hasMore.value = !!data.has_more;
+      // 全局重排：完结优先，集数降序
+      results.value.sort((a, b) => (b.is_complete - a.is_complete) || (b.episode_num - a.episode_num));
+      saveCache({ keyword: keyword.value, results: results.value, offset: offset.value, has_more: hasMore.value });
+      searchMsg.value = `共 ${results.value.length} 条`;
+    } else {
+      showSnack(data?.message || '加载更多失败', 'error');
+    }
+  } catch (e) {
+    showSnack('加载更多异常：' + (e?.message || e), 'error');
+  } finally {
+    loadingMore.value = false;
+  }
+}
+
 // 115 链接：若提取码未附在 URL 上，补上（share_receive 需要 receive_code）
-function fullShareUrl(r) {
-  let url = r.share_url || '';
+function fullShareUrl(r) {  let url = r.share_url || '';
   const rc = r.receive_code || '';
   if (r.pan_type === '115' && rc && !/[?&](password|receive_code|pwd)=/.test(url)) {
     url += (url.includes('?') ? '&' : '?') + 'password=' + rc;
@@ -445,7 +487,22 @@ return (_ctx, _cache) => {
                     }), 128))
                   ]),
                   _: 1
-                })
+                }),
+                (hasMore.value)
+                  ? (_openBlock(), _createElementBlock("div", _hoisted_9, [
+                      _createVNode(_component_v_btn, {
+                        variant: "outlined",
+                        loading: loadingMore.value,
+                        "prepend-icon": "mdi-chevron-down",
+                        onClick: loadMore
+                      }, {
+                        default: _withCtx(() => [...(_cache[12] || (_cache[12] = [
+                          _createTextVNode(" 查看更多历史 ", -1)
+                        ]))]),
+                        _: 1
+                      }, 8, ["loading"])
+                    ]))
+                  : (_openBlock(), _createElementBlock("div", _hoisted_10, "已全部加载"))
               ]),
               _: 1
             }))
@@ -470,6 +527,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Page = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-ee4a4dd4"]]);
+const Page = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-34139453"]]);
 
 export { Page as default };
