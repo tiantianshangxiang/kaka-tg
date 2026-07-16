@@ -22,6 +22,7 @@ const _hoisted_8 = { class: "text-caption text-medium-emphasis mt-1" };
 const {computed,onMounted,reactive,ref} = await importShared('vue');
 
 
+const CACHE_KEY = 'tg115_search_cache';
 
 const _sfc_main = {
   __name: 'Page',
@@ -44,13 +45,32 @@ const loginOk = computed(() => {
 });
 
 // ---- 搜索 ----
-const keyword = ref(localStorage.getItem('tg115_last_keyword') || '');
-const results = ref([]);
+// 搜索结果持久化：保存到 localStorage，下次进详情页自动恢复，新搜索覆盖
+function loadCache() {
+  try {
+    const c = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
+    return c && Array.isArray(c.results) ? c : null
+  } catch { return null }
+}
+function saveCache(kw, res) {
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify({ keyword: kw, results: res, ts: Date.now() })); } catch {}
+}
+const _init = loadCache();
+const keyword = ref(_init ? _init.keyword : '');
+const results = ref(_init ? _init.results : []);
 const searching = ref(false);
-const searchMsg = ref('');
-const searchOk = ref(false);
+const searchMsg = ref(_init ? `已恢复上次搜索「${_init.keyword}」的结果（${_init.results.length} 条）` : '');
+const searchOk = ref(!!_init);
 const transferringIdx = ref(-1);
 const has115 = computed(() => results.value.some((r) => r.pan_type === '115'));
+
+function clearResults() {
+  results.value = [];
+  searchMsg.value = '';
+  searchOk.value = false;
+  keyword.value = '';
+  try { localStorage.removeItem(CACHE_KEY); } catch {}
+}
 // snackbar
 const snack = ref(false);
 const snackColor = ref('');
@@ -74,7 +94,7 @@ async function doSearch() {
       results.value = Array.isArray(data.results) ? data.results : [];
       searchMsg.value = data.message || `找到 ${results.value.length} 条`;
       searchOk.value = true;
-      localStorage.setItem('tg115_last_keyword', kw);
+      saveCache(kw, results.value);
     } else {
       results.value = [];
       searchMsg.value = (data && data.message) || '搜索失败';
@@ -151,9 +171,9 @@ return (_ctx, _cache) => {
   const _component_v_row = _resolveComponent("v-row");
   const _component_v_card_text = _resolveComponent("v-card-text");
   const _component_v_card = _resolveComponent("v-card");
+  const _component_v_btn = _resolveComponent("v-btn");
   const _component_v_text_field = _resolveComponent("v-text-field");
   const _component_v_card_item = _resolveComponent("v-card-item");
-  const _component_v_btn = _resolveComponent("v-btn");
   const _component_v_card_actions = _resolveComponent("v-card-actions");
   const _component_v_snackbar = _resolveComponent("v-snackbar");
 
@@ -244,7 +264,7 @@ return (_ctx, _cache) => {
               color: "primary",
               class: "mr-2"
             }),
-            _cache[7] || (_cache[7] = _createTextVNode(" 手动搜索网盘资源 ", -1)),
+            _cache[8] || (_cache[8] = _createTextVNode(" 手动搜索网盘资源 ", -1)),
             (results.value.length)
               ? (_openBlock(), _createBlock(_component_v_chip, {
                   key: 0,
@@ -265,10 +285,26 @@ return (_ctx, _cache) => {
                   key: 1,
                   size: "x-small",
                   variant: "tonal",
-                  color: "success"
+                  color: "success",
+                  class: "mr-1"
                 }, {
                   default: _withCtx(() => [...(_cache[6] || (_cache[6] = [
                     _createTextVNode("含 115 可转存", -1)
+                  ]))]),
+                  _: 1
+                }))
+              : _createCommentVNode("", true),
+            (results.value.length)
+              ? (_openBlock(), _createBlock(_component_v_btn, {
+                  key: 2,
+                  size: "x-small",
+                  variant: "text",
+                  color: "error",
+                  "prepend-icon": "mdi-close",
+                  onClick: clearResults
+                }, {
+                  default: _withCtx(() => [...(_cache[7] || (_cache[7] = [
+                    _createTextVNode("清除", -1)
                   ]))]),
                   _: 1
                 }))
@@ -345,7 +381,7 @@ return (_ctx, _cache) => {
                                           color: "success",
                                           class: "mr-2"
                                         }, {
-                                          default: _withCtx(() => [...(_cache[8] || (_cache[8] = [
+                                          default: _withCtx(() => [...(_cache[9] || (_cache[9] = [
                                             _createTextVNode("完结", -1)
                                           ]))]),
                                           _: 1
@@ -375,7 +411,7 @@ return (_ctx, _cache) => {
                                     "prepend-icon": "mdi-content-copy",
                                     onClick: $event => (copy(r))
                                   }, {
-                                    default: _withCtx(() => [...(_cache[9] || (_cache[9] = [
+                                    default: _withCtx(() => [...(_cache[10] || (_cache[10] = [
                                       _createTextVNode("复制链接", -1)
                                     ]))]),
                                     _: 1
@@ -391,7 +427,7 @@ return (_ctx, _cache) => {
                                         loading: transferringIdx.value === i,
                                         onClick: $event => (transfer(r, i))
                                       }, {
-                                        default: _withCtx(() => [...(_cache[10] || (_cache[10] = [
+                                        default: _withCtx(() => [...(_cache[11] || (_cache[11] = [
                                           _createTextVNode("转存", -1)
                                         ]))]),
                                         _: 1
@@ -434,6 +470,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Page = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-b0a09713"]]);
+const Page = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-ee4a4dd4"]]);
 
 export { Page as default };

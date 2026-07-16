@@ -45,7 +45,8 @@
           {{ results.length }} 条
         </v-chip>
         <v-spacer />
-        <v-chip v-if="has115" size="x-small" variant="tonal" color="success">含 115 可转存</v-chip>
+        <v-chip v-if="has115" size="x-small" variant="tonal" color="success" class="mr-1">含 115 可转存</v-chip>
+        <v-btn v-if="results.length" size="x-small" variant="text" color="error" prepend-icon="mdi-close" @click="clearResults">清除</v-btn>
       </v-card-title>
       <v-divider />
       <v-card-text class="px-4 py-4">
@@ -124,13 +125,33 @@ const loginOk = computed(() => {
 })
 
 // ---- 搜索 ----
-const keyword = ref(localStorage.getItem('tg115_last_keyword') || '')
-const results = ref([])
+// 搜索结果持久化：保存到 localStorage，下次进详情页自动恢复，新搜索覆盖
+const CACHE_KEY = 'tg115_search_cache'
+function loadCache() {
+  try {
+    const c = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null')
+    return c && Array.isArray(c.results) ? c : null
+  } catch { return null }
+}
+function saveCache(kw, res) {
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify({ keyword: kw, results: res, ts: Date.now() })) } catch {}
+}
+const _init = loadCache()
+const keyword = ref(_init ? _init.keyword : '')
+const results = ref(_init ? _init.results : [])
 const searching = ref(false)
-const searchMsg = ref('')
-const searchOk = ref(false)
+const searchMsg = ref(_init ? `已恢复上次搜索「${_init.keyword}」的结果（${_init.results.length} 条）` : '')
+const searchOk = ref(!!_init)
 const transferringIdx = ref(-1)
 const has115 = computed(() => results.value.some((r) => r.pan_type === '115'))
+
+function clearResults() {
+  results.value = []
+  searchMsg.value = ''
+  searchOk.value = false
+  keyword.value = ''
+  try { localStorage.removeItem(CACHE_KEY) } catch {}
+}
 // snackbar
 const snack = ref(false)
 const snackColor = ref('')
@@ -154,7 +175,7 @@ async function doSearch() {
       results.value = Array.isArray(data.results) ? data.results : []
       searchMsg.value = data.message || `找到 ${results.value.length} 条`
       searchOk.value = true
-      localStorage.setItem('tg115_last_keyword', kw)
+      saveCache(kw, results.value)
     } else {
       results.value = []
       searchMsg.value = (data && data.message) || '搜索失败'
