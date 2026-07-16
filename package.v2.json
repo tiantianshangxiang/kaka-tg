@@ -3,10 +3,11 @@
     "name": "拦截mp订阅",
     "description": "订阅新增时优先到指定 Telegram 频道搜索 115 资源，命中并转存成功后自动完成订阅；未命中或转存失败则平滑回退到 MoviePilot 默认站点搜索。",
     "labels": "订阅,Telegram,115网盘",
-    "version": "4.2.2",
+    "version": "4.2.3",
     "author": "MoviePilot User",
     "level": 2,
     "history": {
+      "v4.2.3": "移除运行时pip安装(_ensure_deps)和requirements.txt依赖声明，避免触发MP主程序依赖健康检查(pip check)导致安装失败(MP自身langchain冲突卡健康检查，别人装不上的真正原因)。插件改用懒导入，依赖MP环境自带httpx/bs4(缺失则功能降级：观影/转存仍可用，仅TG搜索需bs4)。",
       "v4.2.2": "修复观影搜索返回不相关结果+标题杂乱：1)/search从关键字分离年份(法警小队（2026）->法警小队+2026)，观影按年份精确过滤，避免带年份搜不到返回模糊匹配(双姝美探等)。2)观影资源用search_suggest作品名(source_title)+年份做display_name，不再解析panlist里杂乱的名称(含装饰/分类前缀/《》)，panlist name只用于提取集数/清晰度。",
       "v4.2.1": "详情页卡片加回详细信息：显示提取码(115)和原始消息/标题片段(3行截断)，解决TG消息无集数/清晰度时卡片信息过少的问题。",
       "v4.2.0": "资源站更名为'观影'：前台'启用资源站'改'启用观影'，日志/详情页来源标'观影'。观影测试按钮独立(传当前app_auth直接测，不保存不涉及115)。新增磁力链接抓取：site_scraper提取downlist磁力(list.m明文btih)，pan_type=magnet，详情页显示'磁力'标签+复制链接(不转存)。_parse_resource_meta兼容英文BT标题。",

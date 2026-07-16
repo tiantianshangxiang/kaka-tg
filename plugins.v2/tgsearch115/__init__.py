@@ -52,41 +52,13 @@
 - 配置持久化改用 ``self.get_data("config")`` / ``self.save_data("config", ...)``
   （PluginData 表，自动 JSON 序列化），不再使用 VForm 的 update_config。
 """
-# ============================ 依赖动态静默安装 ============================
-# MoviePilot 运行在 Docker 容器内，容器重启后手动 pip 安装的第三方依赖会丢失。
-# 这里在导入业务包之前检测 beautifulsoup4 / httpx，缺失则用当前解释器静默安装，
-# 实现「开箱即用」。安装失败不阻断插件加载（业务模块均为懒导入，缺依赖时仅在
-# 实际调用时报错并由上层捕获后平滑回退，不影响 MoviePilot 主流程）。
-import subprocess as _subprocess
-import sys as _sys
-
-
-def _ensure_deps() -> None:
-    missing = []
-    # 只装轻量依赖：beautifulsoup4 + httpx（httpx 多由 MP 核心预装）。
-    # 不再装 p115client（依赖很重，冷启动慢、拖慢插件加载），115 转存改用 httpx 直连。
-    for _mod, _pkg in (("bs4", "beautifulsoup4"), ("httpx", "httpx")):
-        try:
-            __import__(_mod)
-        except ImportError:
-            missing.append(_pkg)
-    if not missing:
-        return
-    try:
-        _subprocess.run(
-            [_sys.executable, "-m", "pip", "install", "--no-input",
-             "--disable-pip-version-check", *missing],
-            check=False,
-            stdout=_subprocess.DEVNULL,
-            stderr=_subprocess.DEVNULL,
-            timeout=180,
-        )
-    except Exception:
-        # 安装失败不抛出，避免影响 MoviePilot 插件加载
-        pass
-
-
-_ensure_deps()
+# ============================ 依赖说明 ============================
+# 本插件只用 beautifulsoup4 + httpx，均为懒导入（用到时才 import）。
+# **不做运行时 pip 安装**：之前加载期 pip install 会触发 MP 的「主程序依赖恢复 +
+# pip check 健康检查」，而 MP 自身存在 langchain 版本冲突（langchain-experimental
+# vs langchain-community），导致健康检查失败、插件装不上/加载失败。去掉 pip 安装后
+# MP 不再被触发该检查，插件正常加载。依赖由 MP 环境提供（httpx 核心必带；bs4 缺失
+# 时 TG 频道搜索不可用，观影搜索/115转存仍正常，缺依赖会在日志告警）。
 
 import json
 import threading
@@ -225,7 +197,7 @@ class TgSearch115(_PluginBase):
         "订阅新增时优先到指定 Telegram 频道搜索 115 资源，命中并转存成功后自动完成订阅；"
         "未命中或转存失败则平滑回退到 MoviePilot 默认站点搜索。"
     )
-    plugin_version = "4.2.2"
+    plugin_version = "4.2.3"
     plugin_author = "MoviePilot User"
     plugin_icon = "T"
     plugin_config_prefix = "plugin.tgsearch115"
