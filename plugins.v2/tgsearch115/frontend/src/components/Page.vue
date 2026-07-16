@@ -169,8 +169,8 @@ const snack = ref(false)
 const snackColor = ref('')
 const snackText = ref('')
 
-const PAN_LABEL = { '115': '115', quark: '夸克', baidu: '百度', aliyun: '阿里', xunlei: '迅雷', cloud189: '天翼', uc: 'UC', other: '其他' }
-const PAN_COLOR = { '115': 'success', quark: 'info', baidu: 'error', aliyun: 'cyan', xunlei: 'purple', cloud189: 'indigo', uc: 'orange', other: 'grey' }
+const PAN_LABEL = { '115': '115', quark: '夸克', baidu: '百度', aliyun: '阿里', xunlei: '迅雷', cloud189: '天翼', uc: 'UC', magnet: '磁力', other: '其他' }
+const PAN_COLOR = { '115': 'success', quark: 'info', baidu: 'error', aliyun: 'cyan', xunlei: 'purple', cloud189: 'indigo', uc: 'orange', magnet: 'deep-purple', other: 'grey' }
 function panLabel(t) { return PAN_LABEL[t] || t || '其他' }
 function panColor(t) { return PAN_COLOR[t] || 'grey' }
 

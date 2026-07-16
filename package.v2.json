@@ -3,10 +3,11 @@
     "name": "拦截mp订阅",
     "description": "订阅新增时优先到指定 Telegram 频道搜索 115 资源，命中并转存成功后自动完成订阅；未命中或转存失败则平滑回退到 MoviePilot 默认站点搜索。",
     "labels": "订阅,Telegram,115网盘",
-    "version": "4.1.9",
+    "version": "4.2.0",
     "author": "MoviePilot User",
     "level": 2,
     "history": {
+      "v4.2.0": "资源站更名为'观影'：前台'启用资源站'改'启用观影'，日志/详情页来源标'观影'。观影测试按钮独立(传当前app_auth直接测，不保存不涉及115)。新增磁力链接抓取：site_scraper提取downlist磁力(list.m明文btih)，pan_type=magnet，详情页显示'磁力'标签+复制链接(不转存)。_parse_resource_meta兼容英文BT标题。",
       "v4.1.9": "修复TG消息卡片标题解析错误(之前显示📺/名称/资源名称等垃圾)：_parse_resource_meta改为优先从「名称：/资源名称：/片名：value」标签取值，否则扫描行跳过纯符号/标签行找含中日文的片名；/search传完整text而非仅首行resource_title。适配TG频道消息的结构化标签格式，资源站标题解析不变。",
       "v4.1.8": "资源站搜索加防风控延迟：作品间随机0.4-0.8s延迟(首批除外)，避免连续点'查看更多'时downurl短时连发触发风控。TG频道已有Semaphore(5)+随机延迟(0.3-1.5s)防429无需改，115转存低频单次无需改。",
       "v4.1.7": "详情页搜索加「查看更多历史」翻页：site_scraper重构为持久httpx client+缓存作品列表(翻页复用PoW会话不重复解算)，search支持offset分批返回(hits,has_more)；/search API加offset参数(TG仅首批搜索，翻页只追加资源站作品)；前端底部加按钮，点击追加下一批作品资源并全局重排(完结优先)，has_more控制显隐。持久化缓存含offset/has_more。",

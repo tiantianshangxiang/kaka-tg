@@ -93,7 +93,7 @@ class SiteHit:
     pan_type: str = ""        # 115/quark/baidu/aliyun/xunlei/cloud189/uc/other
     pan_label: str = ""       # 站点原始 tname（展示用，可能不准）
     source_title: str = ""    # 搜索命中的片名
-    channel_name: str = "资源站"
+    channel_name: str = "观影"
     pub_date: Optional[str] = None
     year: Optional[int] = None
 
@@ -130,7 +130,7 @@ class FilejinScraper:
         :param year: 订阅流程传入年份，精确匹配同名作品，避免模糊匹配混入。
         """
         if not self.is_ready():
-            logger.warn("【TG115】资源站未配置 app_auth，跳过")
+            logger.warn("【TG115】观影未配置 app_auth，跳过")
             return [], False
         term = (keyword or "").strip()
         if not term:
@@ -150,7 +150,7 @@ class FilejinScraper:
                 # 防风控：作品间随机延迟（首批除外），模仿人工浏览，避免短时连发 downurl
                 if idx > 0:
                     time.sleep(random.uniform(0.4, 0.8))
-                pan_hits = self._fetch_panlist(dir_, id_)
+                pan_hits = self._fetch_resources(dir_, id_)
                 for ph in pan_hits:
                     ph.source_title = str(it.get("title") or "")
                     ph.year = it.get("year")
@@ -158,13 +158,13 @@ class FilejinScraper:
                 if pan_hits:
                     n115 = sum(1 for h in pan_hits if h.is_115)
                     logger.info(
-                        f"【TG115】资源站 [{it.get('title')}] ({dir_}/{id_}) "
+                        f"【TG115】观影 [{it.get('title')}] ({dir_}/{id_}) "
                         f"共 {len(pan_hits)} 条网盘资源，其中 115 {n115} 条"
                     )
             has_more = (offset + cnt) < len(items)
             return hits, has_more
         except Exception as e:
-            logger.error(f"【TG115】资源站搜索失败: {e}")
+            logger.error(f"【TG115】观影搜索失败: {e}")
             return [], False
 
     def check(self) -> Tuple[bool, str]:
@@ -195,7 +195,7 @@ class FilejinScraper:
         self._ensure_access()
         ok, msg, items = self._search_suggest(term)
         if not ok:
-            logger.warn(f"【TG115】资源站搜索 '{term}' 失败: {msg}")
+            logger.warn(f"【TG115】观影搜索 '{term}' 失败: {msg}")
             return None
         # 年份精确匹配（订阅流程）
         if year:
@@ -204,7 +204,7 @@ class FilejinScraper:
             if year_items:
                 items = year_items
         logger.info(
-            f"【TG115】资源站搜索 '{term}' 命中 {len(items)} 部作品"
+            f"【TG115】观影搜索 '{term}' 命中 {len(items)} 部作品"
             + (f"（年份 {year} 匹配）" if year else "")
         )
         self._cache_key = key
@@ -221,7 +221,7 @@ class FilejinScraper:
         try:
             resp = self._get_client().get(SITE_BASE + "/", headers={"Accept": "text/html"})
             if "未登录" in resp.text:
-                logger.warn("【TG115】资源站 app_auth 已失效（返回未登录），请更新 app_auth")
+                logger.warn("【TG115】观影 app_auth 已失效（返回未登录），请更新 app_auth")
         except Exception:
             pass
 
@@ -235,19 +235,19 @@ class FilejinScraper:
             pass
         resp = self._get_client().get(SITE_BASE + "/res/pow", headers={"Accept": "application/json"})
         if resp.status_code != 200:
-            logger.warn(f"【TG115】资源站取 PoW 挑战失败: HTTP {resp.status_code}")
+            logger.warn(f"【TG115】观影取 PoW 挑战失败: HTTP {resp.status_code}")
             return
         try:
             ch = resp.json()
         except Exception as e:
-            logger.warn(f"【TG115】资源站 PoW 挑战非 JSON: {e}")
+            logger.warn(f"【TG115】观影 PoW 挑战非 JSON: {e}")
             return
         try:
             N = int(str(ch["N"]), 16)
             x = int(str(ch["x"]), 16)
             t = int(ch["t"])
         except Exception as e:
-            logger.warn(f"【TG115】资源站 PoW 挑战字段异常: {e}")
+            logger.warn(f"【TG115】观影 PoW 挑战字段异常: {e}")
             return
         # y = x^(2^t) mod N —— C 层快速模幂，t=200000 约 1.5s
         y = pow(x, 1 << t, N)
@@ -261,11 +261,11 @@ class FilejinScraper:
         try:
             vj = resp.json()
             if vj.get("success"):
-                logger.info(f"【TG115】资源站 PoW 解算成功 (t={t})")
+                logger.info(f"【TG115】观影 PoW 解算成功 (t={t})")
             else:
-                logger.warn(f"【TG115】资源站 PoW 验证未通过: {vj}")
+                logger.warn(f"【TG115】观影 PoW 验证未通过: {vj}")
         except Exception:
-            logger.warn("【TG115】资源站 PoW 验证响应非 JSON")
+            logger.warn("【TG115】观影 PoW 验证响应非 JSON")
 
     def _search_suggest(self, term: str):
         """GET /res/search_suggest?q= -> 作品列表。返回 (ok, msg, items)。"""
@@ -290,27 +290,28 @@ class FilejinScraper:
             return False, "响应非数组", []
         return True, "ok", items
 
-    def _fetch_panlist(self, dir_: str, id_: str) -> List[SiteHit]:
-        """GET /res/downurl/{dir}/{id} -> 提取 panlist 全部网盘链接。"""
+    def _fetch_resources(self, dir_: str, id_: str) -> List[SiteHit]:
+        """GET /res/downurl/{dir}/{id} -> 提取 panlist(网盘) + downlist(磁力) 全部资源。"""
         url = f"{SITE_BASE}/res/downurl/{dir_}/{id_}"
         resp = self._get_client().get(url, headers={"Accept": "application/json"})
         if resp.status_code != 200:
-            logger.warn(f"【TG115】资源站 downurl {dir_}/{id_} 失败: HTTP {resp.status_code}")
+            logger.warn(f"【TG115】观影 downurl {dir_}/{id_} 失败: HTTP {resp.status_code}")
             return []
         try:
             data = resp.json()
         except Exception as e:
-            logger.warn(f"【TG115】资源站 downurl 非 JSON: {e}")
+            logger.warn(f"【TG115】观影 downurl 非 JSON: {e}")
             return []
         if data.get("code") not in (200, "200"):
-            logger.warn(f"【TG115】资源站 downurl 返回错误: {data}")
+            logger.warn(f"【TG115】观影 downurl 返回错误: {data}")
             return []
+        hits: List[SiteHit] = []
+        # 1. panlist: 网盘链接（115/夸克/百度/阿里/迅雷/天翼/UC...）
         pl = data.get("panlist") or {}
         urls = pl.get("url") or []
         names = pl.get("name") or []
         ps = pl.get("p") or []
         tnames = pl.get("tname") or []
-        hits: List[SiteHit] = []
         for i, u in enumerate(urls):
             u = str(u or "").strip()
             if not u or u == "javascript:;":
@@ -328,6 +329,37 @@ class FilejinScraper:
                 text=name,
                 pan_type=_classify_pan(u),
                 pan_label=label,
+            ))
+        # 2. downlist: 磁力链接（list.m=明文btih, list.t=标题, list.s=大小, list.e=做种, list.n=时间）
+        dl = data.get("downlist") or {}
+        lst = dl.get("list") or {}
+        ms = lst.get("m") or []
+        ts = lst.get("t") or []
+        ss = lst.get("s") or []
+        es = lst.get("e") or []
+        ns = lst.get("n") or []
+        for i, btih in enumerate(ms):
+            btih = str(btih or "").strip().lower()
+            if len(btih) != 40 or not all(c in "0123456789abcdef" for c in btih):
+                continue  # 非法 btih
+            title = str(ts[i]).strip() if i < len(ts) else ""
+            size = str(ss[i]).strip() if i < len(ss) else ""
+            seeders = str(es[i]).strip() if i < len(es) else ""
+            pub = str(ns[i]).strip() if i < len(ns) else ""
+            magnet = f"magnet:?xt=urn:btih:{btih}&dn={quote(title)}"
+            extra = []
+            if size:
+                extra.append(size)
+            if seeders:
+                extra.append(f"{seeders}做种")
+            text = title + (f" [{' / '.join(extra)}]" if extra else "")
+            hits.append(SiteHit(
+                share_url=magnet,
+                resource_title=_clean_title(title) or title[:200],
+                text=text,
+                pan_type="magnet",
+                pan_label="磁力",
+                pub_date=pub or None,
             ))
         return hits
 

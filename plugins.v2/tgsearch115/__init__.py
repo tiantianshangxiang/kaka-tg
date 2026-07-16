@@ -225,7 +225,7 @@ class TgSearch115(_PluginBase):
         "订阅新增时优先到指定 Telegram 频道搜索 115 资源，命中并转存成功后自动完成订阅；"
         "未命中或转存失败则平滑回退到 MoviePilot 默认站点搜索。"
     )
-    plugin_version = "4.1.9"
+    plugin_version = "4.2.0"
     plugin_author = "MoviePilot User"
     plugin_icon = "T"
     plugin_config_prefix = "plugin.tgsearch115"
@@ -238,6 +238,7 @@ class TgSearch115(_PluginBase):
     _running_ids: set = set()
     _scraper: Optional[TgChannelScraper] = None
     _site_scraper: Optional[FilejinScraper] = None
+    _mp_proxy: str = ""
     _transfer: Optional[P115Transfer] = None
 
     # 配置项（运行态缓存）
@@ -303,7 +304,8 @@ class TgSearch115(_PluginBase):
         except Exception:
             pass
         self._scraper = TgChannelScraper(channels=enabled_channels, proxy=_proxy)
-        # 目标资源站爬虫（PoW + 搜索 + 全网盘提取；仅 115 参与自动转存）
+        self._mp_proxy = _proxy  # 供 /check_site 临时测试用
+        # 观影爬虫（PoW + 搜索 + 全网盘提取；仅 115 参与自动转存）
         self._site_enabled = self._to_bool(config.get("site_enabled"), False)
         self._site_app_auth = config.get("site_app_auth") or ""
         if self._site_enabled and self._site_app_auth:
@@ -425,7 +427,7 @@ class TgSearch115(_PluginBase):
                 "endpoint": self.__check_site_api,
                 "methods": ["GET"],
                 "auth": "bear",
-                "summary": "检查目标资源站连通性与登录态",
+                "summary": "检查观影连通性与登录态",
                 "description": "解 PoW + 试搜，验证 app_auth 是否有效",
             },
         ]
@@ -512,7 +514,7 @@ class TgSearch115(_PluginBase):
 
             keyword = self._build_keyword(subscribe)
             logger.info(f"【TG115】订阅 [{subscribe.name}] 开始搜索，关键字: {keyword}")
-            # 双源搜索：TG 频道（全 115）+ 目标资源站（全网盘，115 占少数）
+            # 双源搜索：TG 频道（全 115）+ 观影（全网盘，115 占少数）
             hits = []
             if self._scraper:
                 hits.extend(self._scraper.search(keyword))
@@ -521,7 +523,7 @@ class TgSearch115(_PluginBase):
                 hits.extend(site_hits)
             if not hits:
                 logger.info(f"【TG115】订阅 [{subscribe.name}] 未找到资源，回退到默认搜索")
-                self._send_fail_notify(subscribe, "TG 频道与资源站均未找到资源")
+                self._send_fail_notify(subscribe, "TG 频道与观影均未找到资源")
                 return
 
             torrents = self._build_torrents(hits)
@@ -824,8 +826,11 @@ class TgSearch115(_PluginBase):
             if nv:
                 name = nv
                 break
-        # 2. 启发式：扫描行，跳过纯符号/其它标签行，取第一条含中日文的候选
+        # 2. 启发式：扫描行，跳过头部词/纯符号/标签行；优先带标题特征(年份/集数/清晰度/【】)的行
         if not name:
+            _headers = ('观影', '影视', '资源', '分享', '频道', '剧迷', '推荐', '福利',
+                        '网盘', '影库', '片库', '分享群', '合集', '整理')
+            _cands = []
             for _line in t.splitlines():
                 ln = _re.sub(r'https?://\S+', '', _line).strip()
                 if not ln or _re.fullmatch(r'[\W\s_]+', ln):
@@ -837,9 +842,18 @@ class TgSearch115(_PluginBase):
                 name_raw = head[:_mm.start()] if _mm else head
                 name_raw = _re.sub(r'[━◀▶▉▔▂▃▅▆▇【】\[\]]', '', name_raw).strip(' -–-·•|:：')
                 name_raw = _re.sub(r'\s*[(（]\d{4}[)）]', '', name_raw).strip(' -–-·•|:：')
-                if name_raw and _re.search(r'[一-鿿぀-ヿ]', name_raw):
+                if not name_raw or not (_re.search(r'[一-鿿぀-ヿ]', name_raw) or _re.search(r'[A-Za-z]{3,}', name_raw)):
+                    continue
+                # 跳过纯头部词（如"观影""影视分享"等短头部）
+                if len(name_raw) <= 8 and any(name_raw.startswith(w) for w in _headers):
+                    continue
+                _feat = bool(_re.search(r'[(（]\d{4}[)）]|[Ss]\d{1,2}[Ee]\d|全\s*\d{1,3}\s*集|更新至|【', ln))
+                _cands.append((name_raw, _feat))
+                if _feat:
                     name = name_raw
                     break
+            if not name and _cands:
+                name = _cands[0][0]
         # 3. 兜底：第一个【】内容
         if not name:
             bm = _re.search(r'【([^】]{1,60})】', t)
@@ -1090,11 +1104,11 @@ class TgSearch115(_PluginBase):
             return JSONResponse({"success": False, "message": f"转存失败: {e}"}, status_code=500)
 
     def __search_api(self, keyword: str = "", offset: int = 0):
-        """GET /search?keyword=...&offset=N：手动搜索 TG 频道 + 目标资源站的网盘资源。
+        """GET /search?keyword=...&offset=N：手动搜索 TG 频道 + 观影的网盘资源。
 
         返回全部网盘类型（115/夸克/百度/阿里/迅雷…），前端按类型展示；仅 115 可自动转存。
-        offset 用于资源站翻页（按作品分批，每批 3 部）；TG 仅在首批(offset=0)搜索一次。
-        返回 has_more 标记是否还有更多资源站作品可翻页。搜索在独立线程池执行，不阻塞主循环。
+        offset 用于观影翻页（按作品分批，每批 3 部）；TG 仅在首批(offset=0)搜索一次。
+        返回 has_more 标记是否还有更多观影作品可翻页。搜索在独立线程池执行，不阻塞主循环。
         """
         from starlette.responses import JSONResponse
         import concurrent.futures
@@ -1102,7 +1116,7 @@ class TgSearch115(_PluginBase):
         if not keyword:
             return JSONResponse({"success": False, "message": "请输入搜索关键字"}, status_code=400)
         if (not self._scraper or not self._tg_channels) and not self._site_scraper:
-            return JSONResponse({"success": False, "message": "未配置任何搜索源（TG 频道或资源站）"}, status_code=400)
+            return JSONResponse({"success": False, "message": "未配置任何搜索源（TG 频道或观影）"}, status_code=400)
         try:
             offset = int(offset or 0)
         except Exception:
@@ -1111,7 +1125,7 @@ class TgSearch115(_PluginBase):
         def _do_search():
             hits = []
             has_more = False
-            # TG 仅首批搜索一次（已抓全 max_pages 页）；翻页(offset>0)只追加资源站作品
+            # TG 仅首批搜索一次（已抓全 max_pages 页）；翻页(offset>0)只追加观影作品
             if self._scraper and offset == 0:
                 hits.extend(self._scraper.search(keyword))
             if self._site_scraper:
@@ -1226,11 +1240,20 @@ class TgSearch115(_PluginBase):
             logger.error(f"【TG115】验证 Cookie 异常: {e}")
             return JSONResponse({"success": False, "valid": False, "message": f"验证失败: {e}"})
 
-    def __check_site_api(self):
-        """GET /check_site：检查目标资源站 PoW + app_auth 登录态是否有效。"""
+    def __check_site_api(self, app_auth: str = ""):
+        """GET /check_site?app_auth=...：检查观影 PoW + app_auth 登录态。
+
+        传 ``app_auth`` 则测**当前输入**（无需先保存），否则测已保存配置。
+        """
         from starlette.responses import JSONResponse
+        auth = (app_auth or "").strip()
+        if auth:
+            # 临时 scraper 测当前输入的 app_auth（不依赖保存）
+            scraper = FilejinScraper(app_auth=auth, proxy=self._mp_proxy or None)
+            ok, msg = scraper.check()
+            return JSONResponse({"success": ok, "message": msg})
         if not self._site_scraper:
-            return JSONResponse({"success": False, "message": "资源站未启用或未配置 app_auth"})
+            return JSONResponse({"success": False, "message": "观影未启用或未配置 app_auth"})
         ok, msg = self._site_scraper.check()
         return JSONResponse({"success": ok, "message": msg})
 

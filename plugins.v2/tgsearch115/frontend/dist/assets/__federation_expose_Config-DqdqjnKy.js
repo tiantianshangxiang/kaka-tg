@@ -152,7 +152,7 @@ const searchResults = ref([]);
 const searched = ref(false);
 const displayLimit = ref(3);
 const transferringIndex = ref(-1);  // 正在转存的结果索引（-1=无）
-// 资源站连通检查
+// 观影连通检查
 const siteChecking = ref(false);
 // 115 目录查询/浏览
 const dirInfoName = ref('');
@@ -405,10 +405,11 @@ function copyLink(r) {
   snack('已复制链接' + (r.receive_code ? '与提取码' : ''));
 }
 async function checkSite() {
-  if (!config.site_app_auth) { snack('请先填 app_auth', 'warning'); return }
-  await saveAll();
+  const auth = (config.site_app_auth || '').trim();
+  if (!auth) { snack('请先填 app_auth', 'warning'); return }
   siteChecking.value = true;
-  const res = await apiGet('/check_site');
+  // 直接传当前输入的 app_auth 测试，不保存、不涉及 115
+  const res = await apiGet('/check_site?app_auth=' + encodeURIComponent(auth));
   siteChecking.value = false;
   snack((res && res.message) || '检查失败', (res && res.success) ? 'success' : 'error');
 }
@@ -982,7 +983,7 @@ return (_ctx, _cache) => {
               class: "pa-4"
             }, {
               default: _withCtx(() => [
-                _cache[52] || (_cache[52] = _createElementVNode("div", { class: "section-label mb-2" }, "手动搜索（TG 频道 + 资源站）", -1)),
+                _cache[52] || (_cache[52] = _createElementVNode("div", { class: "section-label mb-2" }, "手动搜索（TG 频道 + 观影）", -1)),
                 _createElementVNode("div", _hoisted_4, [
                   _createVNode(_component_v_text_field, {
                     modelValue: searchKeyword.value,
@@ -1122,7 +1123,7 @@ return (_ctx, _cache) => {
                           class: "mb-2"
                         }),
                         _cache[50] || (_cache[50] = _createElementVNode("div", { class: "text-body-2" }, "未找到资源", -1)),
-                        _cache[51] || (_cache[51] = _createElementVNode("div", { class: "text-caption text-medium-emphasis mt-1" }, "提示：TG 用片名搜全历史；资源站需在「插件设置」配置 app_auth", -1))
+                        _cache[51] || (_cache[51] = _createElementVNode("div", { class: "text-caption text-medium-emphasis mt-1" }, "提示：TG 用片名搜全历史；观影需在「插件设置」配置 app_auth", -1))
                       ]))
                     : _createCommentVNode("", true)
               ]),
@@ -1460,8 +1461,8 @@ return (_ctx, _cache) => {
                     }, {
                       default: _withCtx(() => [
                         _createVNode(_component_v_divider),
-                        _cache[65] || (_cache[65] = _createElementVNode("div", { class: "text-subtitle-2 mt-3 mb-1" }, "目标资源站（xn--wcv59z.com）", -1)),
-                        _cache[66] || (_cache[66] = _createElementVNode("div", { class: "text-caption text-medium-emphasis mb-3" }, "PoW 验证 + 全网盘资源搜索；仅 115 自动转存，其它网盘仅展示链接", -1))
+                        _cache[65] || (_cache[65] = _createElementVNode("div", { class: "text-subtitle-2 mt-3 mb-1" }, "观影（xn--wcv59z.com）", -1)),
+                        _cache[66] || (_cache[66] = _createElementVNode("div", { class: "text-caption text-medium-emphasis mb-3" }, "PoW 验证 + 全网盘资源 + 磁力链接搜索；仅 115 自动转存，其它网盘/磁力仅展示链接", -1))
                       ]),
                       _: 1
                     }),
@@ -1472,7 +1473,7 @@ return (_ctx, _cache) => {
                     }, {
                       default: _withCtx(() => [
                         _cache[67] || (_cache[67] = _createElementVNode("div", { class: "mr-2" }, [
-                          _createElementVNode("div", { class: "text-subtitle-2" }, "启用资源站"),
+                          _createElementVNode("div", { class: "text-subtitle-2" }, "启用观影"),
                           _createElementVNode("div", { class: "text-caption text-medium-emphasis" }, "搜索时同时查该站")
                         ], -1)),
                         _createVNode(_component_v_spacer),
@@ -1512,7 +1513,7 @@ return (_ctx, _cache) => {
                         _createVNode(_component_v_text_field, {
                           modelValue: config.site_app_auth,
                           "onUpdate:modelValue": _cache[18] || (_cache[18] = $event => ((config.site_app_auth) = $event)),
-                          label: "资源站 app_auth Cookie",
+                          label: "观影 app_auth Cookie",
                           variant: "outlined",
                           density: "compact",
                           "hide-details": "",
@@ -1991,6 +1992,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-18f1e76d"]]);
+const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-bb3b1472"]]);
 
 export { Config as default };
