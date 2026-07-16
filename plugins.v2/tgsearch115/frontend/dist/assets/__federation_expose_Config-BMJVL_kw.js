@@ -1637,11 +1637,11 @@ return (_ctx, _cache) => {
                         _createVNode(_component_v_text_field, {
                           modelValue: config.site_proxy,
                           "onUpdate:modelValue": _cache[21] || (_cache[21] = $event => ((config.site_proxy) = $event)),
-                          label: "观影专用代理（可选，解决 downurl 403）",
+                          label: "观影专用代理（可选）",
                           variant: "outlined",
                           density: "compact",
                           "hide-details": "",
-                          hint: "观影站对部分 IP 封 downurl(返回403)；填一个未被封的代理让观影走它。Docker 内填宿主机代理如 http://host.docker.internal:10809，留空则用 MP 全局代理",
+                          hint: "观影站对翻墙代理IP可能会封downurl(返回403)。留空默认直连；如需走特定代理请填URL；填 direct 强制直连不受MP全局代理影响",
                           "persistent-hint": ""
                         }, null, 8, ["modelValue"])
                       ]),
@@ -2219,6 +2219,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-d94b3f12"]]);
+const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-b43695f3"]]);
 
 export { Config as default };
