@@ -67,6 +67,7 @@
             <v-btn value="all" size="small">全部</v-btn>
             <v-btn value="tg" size="small">TG</v-btn>
             <v-btn value="site" size="small">观影</v-btn>
+            <v-btn value="juying" size="small">聚影</v-btn>
           </v-btn-toggle>
         </div>
         <div v-if="searchMsg" class="text-caption mt-2" :class="searchOk ? 'text-success' : 'text-error'">

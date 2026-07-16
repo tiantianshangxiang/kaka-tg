@@ -3,10 +3,11 @@
     "name": "拦截mp订阅",
     "description": "订阅新增时优先到指定 Telegram 频道搜索 115 资源，命中并转存成功后自动完成订阅；未命中或转存失败则平滑回退到 MoviePilot 默认站点搜索。",
     "labels": "订阅,Telegram,115网盘",
-    "version": "4.2.6",
+    "version": "4.2.7",
     "author": "MoviePilot User",
     "level": 2,
     "history": {
+      "v4.2.7": "集成聚影开发者API：新增juying_scraper，支持通过AppID+API Key调用官方/api/dev/search/aggregate/接口获取全网盘资源，不受IP封锁和PoW验证限制。配置页新增「聚影」Tab并支持独立连通性测试。搜索来源选择器同步增加「聚影」选项。返回资源与观影/TG同构，支持115转存与磁力提取。",
       "v4.2.6": "观影域名可配置：site_scraper的硬编码SITE_BASE改为实例属性self.site_base(可传site_base参数)，观影Tab新增「观影站点域名」输入框，换域名时填这里不用改代码。留空用默认xn--wcv59z.com，自动去末尾/。/check_site测试也支持传域名(site_domain参数)。",
       "v4.2.5": "观影加专用代理配置：观影站对部分IP封downurl(403)，插件新增「观影专用代理」字段(观影Tab)，填未被封的代理(如http://host.docker.internal:10809)让观影请求走它，留空回退MP全局代理。实测确认downurl是IP维度封锁(直连+10809代理均200，MP服务器IP被403)，与app_auth/代码无关。/check_site测试也用该代理。",
       "v4.2.4": "1)观影配置独立成「观影」Tab(从插件设置移出)。2)手动搜索(Config)和详情页(Page)增加来源选择器(全部/TG/观影)，默认全部，选哪个只搜哪个。3)/search加source参数(all/tg/site)。4)观影app_auth失效时搜索结果返回warning提示前端(app_auth过期是观影搜不到的主因，需重新登录观影站更新app_auth)。5)site_scraper追踪app_auth有效性(403/未登录检测)。",

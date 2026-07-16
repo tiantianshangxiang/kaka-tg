@@ -381,7 +381,7 @@ return (_ctx, _cache) => {
               onKeyup: _withKeys(doSearch, ["enter"])
             }, null, 8, ["modelValue", "loading"]),
             _createElementVNode("div", _hoisted_4, [
-              _cache[13] || (_cache[13] = _createElementVNode("span", { class: "text-caption text-medium-emphasis" }, "来源", -1)),
+              _cache[14] || (_cache[14] = _createElementVNode("span", { class: "text-caption text-medium-emphasis" }, "来源", -1)),
               _createVNode(_component_v_btn_toggle, {
                 modelValue: searchSource.value,
                 "onUpdate:modelValue": _cache[1] || (_cache[1] = $event => ((searchSource).value = $event)),
@@ -415,6 +415,15 @@ return (_ctx, _cache) => {
                   }, {
                     default: _withCtx(() => [...(_cache[12] || (_cache[12] = [
                       _createTextVNode("观影", -1)
+                    ]))]),
+                    _: 1
+                  }),
+                  _createVNode(_component_v_btn, {
+                    value: "juying",
+                    size: "small"
+                  }, {
+                    default: _withCtx(() => [...(_cache[13] || (_cache[13] = [
+                      _createTextVNode("聚影", -1)
                     ]))]),
                     _: 1
                   })
@@ -476,7 +485,7 @@ return (_ctx, _cache) => {
                                           color: "success",
                                           class: "mr-2"
                                         }, {
-                                          default: _withCtx(() => [...(_cache[14] || (_cache[14] = [
+                                          default: _withCtx(() => [...(_cache[15] || (_cache[15] = [
                                             _createTextVNode("完结", -1)
                                           ]))]),
                                           _: 1
@@ -512,7 +521,7 @@ return (_ctx, _cache) => {
                                     "prepend-icon": "mdi-content-copy",
                                     onClick: $event => (copy(r))
                                   }, {
-                                    default: _withCtx(() => [...(_cache[15] || (_cache[15] = [
+                                    default: _withCtx(() => [...(_cache[16] || (_cache[16] = [
                                       _createTextVNode("复制链接", -1)
                                     ]))]),
                                     _: 1
@@ -528,7 +537,7 @@ return (_ctx, _cache) => {
                                         loading: transferringIdx.value === i,
                                         onClick: $event => (transfer(r, i))
                                       }, {
-                                        default: _withCtx(() => [...(_cache[16] || (_cache[16] = [
+                                        default: _withCtx(() => [...(_cache[17] || (_cache[17] = [
                                           _createTextVNode("转存", -1)
                                         ]))]),
                                         _: 1
@@ -555,7 +564,7 @@ return (_ctx, _cache) => {
                         "prepend-icon": "mdi-chevron-down",
                         onClick: loadMore
                       }, {
-                        default: _withCtx(() => [...(_cache[17] || (_cache[17] = [
+                        default: _withCtx(() => [...(_cache[18] || (_cache[18] = [
                           _createTextVNode(" 查看更多历史 ", -1)
                         ]))]),
                         _: 1
@@ -586,6 +595,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Page = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-2d77f6fa"]]);
+const Page = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-0e4953ae"]]);
 
 export { Page as default };

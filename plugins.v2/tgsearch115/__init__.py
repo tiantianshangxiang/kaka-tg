@@ -81,6 +81,7 @@ from app.schemas.types import EventType, NotificationType, SystemConfigKey
 from .p115_transfer import P115Transfer
 from .tg_scraper import TgChannelScraper
 from .site_scraper import FilejinScraper
+from .juying_scraper import JuyingApi
 
 
 # get_data / save_data 存储本插件配置使用的 key
@@ -197,7 +198,7 @@ class TgSearch115(_PluginBase):
         "订阅新增时优先到指定 Telegram 频道搜索 115 资源，命中并转存成功后自动完成订阅；"
         "未命中或转存失败则平滑回退到 MoviePilot 默认站点搜索。"
     )
-    plugin_version = "4.2.6"
+    plugin_version = "4.2.7"
     plugin_author = "MoviePilot User"
     plugin_icon = "T"
     plugin_config_prefix = "plugin.tgsearch115"
@@ -210,6 +211,7 @@ class TgSearch115(_PluginBase):
     _running_ids: set = set()
     _scraper: Optional[TgChannelScraper] = None
     _site_scraper: Optional[FilejinScraper] = None
+    _juying_api: Optional[JuyingApi] = None
     _mp_proxy: str = ""
     _transfer: Optional[P115Transfer] = None
 
@@ -290,6 +292,18 @@ class TgSearch115(_PluginBase):
             )
         else:
             self._site_scraper = None
+        # 聚影开发者 API（官方接口，稳定无 IP 封锁；需 AppID+API Key+域名）
+        self._juying_enabled = self._to_bool(config.get("juying_enabled"), False)
+        self._juying_app_id = config.get("juying_app_id") or ""
+        self._juying_api_key = config.get("juying_api_key") or ""
+        self._juying_domain = (config.get("juying_domain") or "").strip()
+        if self._juying_enabled and self._juying_app_id and self._juying_api_key and self._juying_domain:
+            self._juying_api = JuyingApi(
+                app_id=self._juying_app_id, api_key=self._juying_api_key,
+                domain=self._juying_domain, proxy=self._site_proxy,
+            )
+        else:
+            self._juying_api = None
         self._transfer = P115Transfer(
             cookie=self._p115_cookie, default_target_path=self._p115_target
         )
@@ -405,6 +419,14 @@ class TgSearch115(_PluginBase):
                 "auth": "bear",
                 "summary": "检查观影连通性与登录态",
                 "description": "解 PoW + 试搜，验证 app_auth 是否有效",
+            },
+            {
+                "path": "/check_juying",
+                "endpoint": self.__check_juying_api,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "检查聚影 API 鉴权",
+                "description": "用 AppID+API Key 试搜，验证聚影开发者接口是否可用",
             },
         ]
         return apis
@@ -1115,6 +1137,8 @@ class TgSearch115(_PluginBase):
                 site_hits, has_more = self._site_scraper.search(
                     search_kw, year=manual_year, offset=offset, count=3)
                 hits.extend(site_hits)
+            if src in ("all", "juying") and self._juying_api:
+                hits.extend(self._juying_api.search(search_kw, year=manual_year))
             return hits, has_more
 
         try:
@@ -1154,6 +1178,8 @@ class TgSearch115(_PluginBase):
             warning = ""
             if self._site_scraper and not getattr(self._site_scraper, "app_auth_valid", True):
                 warning = "观影 app_auth 已失效，请在「观影」Tab 更新 app_auth 后重试"
+            elif self._juying_api and not getattr(self._juying_api, "app_auth_valid", True):
+                warning = "聚影 AppID/API Key 无效(401)，请在「聚影」Tab 检查凭证"
             return JSONResponse({
                 "success": True,
                 "message": f"找到 {len(results)} 条资源",
@@ -1255,6 +1281,24 @@ class TgSearch115(_PluginBase):
         ok, msg = self._site_scraper.check()
         return JSONResponse({"success": ok, "message": msg})
 
+    def __check_juying_api(self, app_id: str = "", api_key: str = "", domain: str = ""):
+        """GET /check_juying?app_id=...&api_key=...&domain=...：检查聚影 API 鉴权。
+
+        传参则测当前输入（无需保存），否则测已保存配置。
+        """
+        from starlette.responses import JSONResponse
+        aid = (app_id or "").strip()
+        akey = (api_key or "").strip()
+        dom = (domain or "").strip() or self._juying_domain
+        if aid or akey:
+            api = JuyingApi(app_id=aid, api_key=akey, domain=dom, proxy=self._site_proxy)
+            ok, msg = api.check()
+            return JSONResponse({"success": ok, "message": msg})
+        if not self._juying_api:
+            return JSONResponse({"success": False, "message": "聚影未启用或未配置 AppID/API Key/域名"})
+        ok, msg = self._juying_api.check()
+        return JSONResponse({"success": ok, "message": msg})
+
     # ============================ 依赖检查 ============================
     def _check_deps(self):
         missing = []
@@ -1294,6 +1338,10 @@ class TgSearch115(_PluginBase):
             "site_app_auth": "",
             "site_proxy": "",
             "site_domain": "",
+            "juying_enabled": False,
+            "juying_app_id": "",
+            "juying_api_key": "",
+            "juying_domain": "",
             "tg_channels": [],
         }
 

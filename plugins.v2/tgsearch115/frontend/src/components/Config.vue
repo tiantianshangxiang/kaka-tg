@@ -71,6 +71,7 @@
         <v-tab value="search" prepend-icon="mdi-magnify">手动搜索</v-tab>
         <v-tab value="channel" prepend-icon="mdi-bullhorn-outline">TG 频道模块</v-tab>
         <v-tab value="site" prepend-icon="mdi-movie-search-outline">观影</v-tab>
+        <v-tab value="juying" prepend-icon="mdi-api">聚影</v-tab>
         <v-tab value="settings" prepend-icon="mdi-cog-outline">插件设置</v-tab>
       </v-tabs>
       <v-divider />
@@ -121,6 +122,7 @@
               <v-btn value="all" size="small">全部</v-btn>
               <v-btn value="tg" size="small">TG</v-btn>
               <v-btn value="site" size="small">观影</v-btn>
+              <v-btn value="juying" size="small">聚影</v-btn>
             </v-btn-toggle>
           </div>
           <div class="d-flex ga-2 mb-3">
@@ -313,6 +315,34 @@
             </v-col>
           </v-row>
         </v-window-item>
+
+        <!-- ============ Tab：聚影 ============ -->
+        <v-window-item value="juying" class="pa-4">
+          <div class="section-label mb-2">聚影开发者 API</div>
+          <div class="text-caption text-medium-emphasis mb-3">官方 API 搜索（AppID+API Key 鉴权），稳定无 IP 封锁。非开发者用开发者的 AppID + 自己的 API Key</div>
+          <v-row>
+            <v-col cols="12" md="6" class="d-flex align-center">
+              <div class="mr-2">
+                <div class="text-subtitle-2">启用聚影</div>
+                <div class="text-caption text-medium-emphasis">搜索时同时查聚影</div>
+              </div>
+              <v-spacer />
+              <v-switch v-model="config.juying_enabled" color="primary" hide-details density="compact" />
+            </v-col>
+            <v-col cols="12" md="6" class="d-flex align-center">
+              <v-btn size="small" variant="outlined" prepend-icon="mdi-connection" :loading="juyingChecking" @click="checkJuying">测试连通</v-btn>
+            </v-col>
+            <v-col cols="12">
+              <v-text-field v-model="config.juying_domain" label="聚影站点域名" placeholder="https://juying.example.com" variant="outlined" density="compact" hide-details hint="聚影网站地址（带 https://，不带末尾/）" persistent-hint />
+            </v-col>
+            <v-col cols="12">
+              <v-text-field v-model="config.juying_app_id" label="AppID（开发者凭证）" variant="outlined" density="compact" hide-details hint="开发者 AppID；非开发者填开发者的 AppID" persistent-hint />
+            </v-col>
+            <v-col cols="12">
+              <v-text-field v-model="config.juying_api_key" label="API Key（个人凭证）" variant="outlined" density="compact" hide-details hint="个人中心获取的 API Key" persistent-hint />
+            </v-col>
+          </v-row>
+        </v-window-item>
       </v-window>
     </v-card>
 
@@ -490,6 +520,10 @@ const DEFAULTS = {
   site_app_auth: '',
   site_proxy: '',
   site_domain: '',
+  juying_enabled: false,
+  juying_app_id: '',
+  juying_api_key: '',
+  juying_domain: '',
   tg_channels: [],
 }
 
@@ -802,6 +836,16 @@ async function checkSite() {
   const dom = encodeURIComponent((config.site_domain || '').trim())
   const res = await apiGet('/check_site?app_auth=' + encodeURIComponent(auth) + (dom ? '&site_domain=' + dom : ''))
   siteChecking.value = false
+  snack((res && res.message) || '检查失败', (res && res.success) ? 'success' : 'error')
+}
+async function checkJuying() {
+  const aid = (config.juying_app_id || '').trim()
+  const akey = (config.juying_api_key || '').trim()
+  if (!aid || !akey) { snack('请先填 AppID 和 API Key', 'warning'); return }
+  juyingChecking.value = true
+  const dom = encodeURIComponent((config.juying_domain || '').trim())
+  const res = await apiGet(`/check_juying?app_id=${encodeURIComponent(aid)}&api_key=${encodeURIComponent(akey)}${dom ? '&domain=' + dom : ''}`)
+  juyingChecking.value = false
   snack((res && res.message) || '检查失败', (res && res.success) ? 'success' : 'error')
 }
 async function doSearch() {
