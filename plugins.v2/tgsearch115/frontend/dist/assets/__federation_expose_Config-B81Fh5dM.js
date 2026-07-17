@@ -1637,11 +1637,11 @@ return (_ctx, _cache) => {
                         _createVNode(_component_v_text_field, {
                           modelValue: config.site_proxy,
                           "onUpdate:modelValue": _cache[21] || (_cache[21] = $event => ((config.site_proxy) = $event)),
-                          label: "观影专用代理（可选）",
+                          label: "观影代理设置（留空为直连）",
                           variant: "outlined",
                           density: "compact",
                           "hide-details": "",
-                          hint: "观影站对翻墙代理IP可能会封downurl(返回403)。留空默认直连；如需走特定代理请填URL；填 direct 强制直连不受MP全局代理影响",
+                          hint: "观影站不允许使用翻墙代理，所以默认强制直连飞牛网络（不受 MP 全局代理影响）。如果有特殊需求可填特定代理 URL；填 proxy 强制跟随全局",
                           "persistent-hint": ""
                         }, null, 8, ["modelValue"])
                       ]),
@@ -2234,6 +2234,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-b9a79213"]]);
+const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-465e1e55"]]);
 
 export { Config as default };

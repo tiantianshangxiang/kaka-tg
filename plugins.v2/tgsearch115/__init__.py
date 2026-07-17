@@ -198,7 +198,7 @@ class TgSearch115(_PluginBase):
         "订阅新增时优先到指定 Telegram 频道搜索 115 资源，命中并转存成功后自动完成订阅；"
         "未命中或转存失败则平滑回退到 MoviePilot 默认站点搜索。"
     )
-    plugin_version = "4.2.10"
+    plugin_version = "4.2.11"
     plugin_author = "MoviePilot User"
     plugin_icon = "T"
     plugin_config_prefix = "plugin.tgsearch115"
@@ -284,9 +284,9 @@ class TgSearch115(_PluginBase):
         self._site_app_auth = config.get("site_app_auth") or ""
         # 观影专用代理：优先用配置的，否则默认不走代理（与 TG 区分开）。
         # 因为观影站对国外代理节点/机房IP往往会封锁 downurl 导致 403，直连反而更稳。
-        # 如果填了 'direct' 则强制直连，哪怕 MP 配了全局代理。
+        # 如果填了 'proxy' 则强制用全局代理，留空或填 direct 都是直连。
         sp = (config.get("site_proxy") or "").strip()
-        self._site_proxy = None if sp == 'direct' else (sp or None)
+        self._site_proxy = _proxy if sp == 'proxy' else (None if not sp or sp == 'direct' else sp)
         self._site_domain = (config.get("site_domain") or "").strip()  # 观影域名（换域名时改这里）
         if self._site_enabled and self._site_app_auth:
             self._site_scraper = FilejinScraper(

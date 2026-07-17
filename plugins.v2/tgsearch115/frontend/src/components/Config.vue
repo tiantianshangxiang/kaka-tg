@@ -311,7 +311,7 @@
               <v-text-field v-model="config.site_app_auth" label="观影 app_auth Cookie" variant="outlined" density="compact" hide-details hint="登录站点后从浏览器 Cookie 取 app_auth 值" persistent-hint />
             </v-col>
             <v-col cols="12">
-              <v-text-field v-model="config.site_proxy" label="观影专用代理（可选）" variant="outlined" density="compact" hide-details hint="观影站对翻墙代理IP可能会封downurl(返回403)。留空默认直连；如需走特定代理请填URL；填 direct 强制直连不受MP全局代理影响" persistent-hint />
+              <v-text-field v-model="config.site_proxy" label="观影代理设置（留空为直连）" variant="outlined" density="compact" hide-details hint="观影站不允许使用翻墙代理，所以默认强制直连飞牛网络（不受 MP 全局代理影响）。如果有特殊需求可填特定代理 URL；填 proxy 强制跟随全局" persistent-hint />
             </v-col>
           </v-row>
         </v-window-item>
@@ -340,6 +340,9 @@
             </v-col>
             <v-col cols="12">
               <v-text-field v-model="config.juying_api_key" label="API Key（个人凭证）" variant="outlined" density="compact" hide-details hint="个人中心获取的 API Key" persistent-hint />
+            </v-col>
+            <v-col cols="12">
+              <v-text-field v-model="config.juying_proxy" label="聚影专用代理（可选）" variant="outlined" density="compact" hide-details hint="留空默认直连；如需走特定代理请填URL；填 direct 强制直连不受MP全局代理影响" persistent-hint />
             </v-col>
           </v-row>
         </v-window-item>
