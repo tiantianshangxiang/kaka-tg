@@ -389,7 +389,15 @@ class FilejinScraper:
             "cookies": {"app_auth": self.app_auth} if self.app_auth else None,
         }
         if self.proxy:
+            # 解决 docker 内部 requests/httpx 环境代理穿越问题：
+            # httpx 发现如果传入了 proxy 参数，可能会因为环境变量 HTTP_PROXY 导致
+            # 内部网络隔离机制无法生效。这里显式给 trust_env=False，确保 proxy 参
+            # 数绝对生效。
             kwargs["proxy"] = self.proxy
+            kwargs["trust_env"] = False
+        else:
+            # 用户选直连时，强制不使用环境变量里的全局代理
+            kwargs["trust_env"] = False
         return httpx.Client(**kwargs)
 
 
