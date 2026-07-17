@@ -3,10 +3,11 @@
     "name": "拦截mp订阅",
     "description": "订阅新增时优先到指定 Telegram 频道搜索 115 资源，命中并转存成功后自动完成订阅；未命中或转存失败则平滑回退到 MoviePilot 默认站点搜索。",
     "labels": "订阅,Telegram,115网盘",
-    "version": "4.2.12",
+    "version": "4.2.13",
     "author": "MoviePilot User",
     "level": 2,
     "history": {
+      "v4.2.13": "全局切断httpx在Docker环境变量下的代理穿越问题：除了观影外，为115转存和聚影的httpx.Client也统加上trust_env=False参数。避免留空不走代理时，因宿主机的HTTP_PROXY污染导致被意外路由到国外代理节点。",
       "v4.2.12": "彻底切断观影的MP全局代理污染：httpx.Client强制加trust_env=False。之前即使观影代理设置留空(直连)，httpx仍会因为Docker环境变量(HTTP_PROXY)而自动使用MP全局代理，导致观影downurl继续报403。现已强制忽略环境变量，真正实现直连飞牛网络。",
       "v4.2.11": "观影默认强制直连（绕过MP代理）：因为观影站不允许使用代理节点(会403)，改为留空时强制直连服务器网络(飞牛网络)，不再回退使用MP的TG代理。如果需要跟随全局代理，可以手动填入 proxy。",
       "v4.2.10": "修复观影403被误判为app_auth失效的问题：downurl返回403是因为观影站对代理/机房IP封禁，而非app_auth失效(此前错误地将403置为app_auth_valid=False，导致一直提示更新app_auth)。已移除该误判，遇到403时请在「观影专用代理」填入未被封禁的代理(如本地电脑代理 http://host.docker.internal:10809)或填 direct 强制直连。",

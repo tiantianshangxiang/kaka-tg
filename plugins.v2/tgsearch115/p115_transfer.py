@@ -232,6 +232,7 @@ class P115Transfer:
                 "Cookie": self.cookie,
             },
             follow_redirects=True,
+            trust_env=False,  # 115 接口直连，彻底绕过 docker HTTP_PROXY 环境变量
         )
         return self._http
 

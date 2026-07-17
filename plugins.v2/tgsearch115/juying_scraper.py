@@ -157,5 +157,8 @@ class JuyingApi:
             }
             if self.proxy:
                 kwargs["proxy"] = self.proxy
+                kwargs["trust_env"] = False
+            else:
+                kwargs["trust_env"] = False
             self._http = httpx.Client(**kwargs)
         return self._http
