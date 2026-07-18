@@ -296,14 +296,37 @@ class FilejinScraper:
     def _fetch_resources(self, dir_: str, id_: str) -> List[SiteHit]:
         """GET /res/downurl/{dir}/{id} -> 提取 panlist(网盘) + downlist(磁力) 全部资源。"""
         url = f"{self.site_base}/res/downurl/{dir_}/{id_}"
+        
+        # 方案1：标准 JSON 请求
         resp = self._get_client().get(url, headers={"Accept": "application/json"})
-        if resp.status_code != 200:
-            if resp.status_code == 403:
-                # 注：403 通常是因为观影站对代理 IP/国外机房封锁 downurl 接口，
-                # 不是 app_auth 失效。取消这里的 app_auth_valid = False 覆盖
+        if resp.status_code == 200:
+            return self._parse_downurl(resp)
+        
+        # 方案2：403/404 时尝试带更完整浏览器特征重试
+        if resp.status_code in (403, 404):
+            retry_headers = {
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Referer": f"{self.site_base}/res/search_suggest",
+                "Origin": self.site_base,
+            }
+            try:
+                resp2 = self._get_client().get(url, headers=retry_headers)
+                if resp2.status_code == 200:
+                    return self._parse_downurl(resp2)
+            except Exception:
                 pass
-            logger.warn(f"【TG115】观影 downurl {dir_}/{id_} 失败: HTTP {resp.status_code}")
-            return []
+        
+        # 方案3：尝试从 search_suggest 结果页提取资源（绕过 downurl API 封锁）
+        if resp.status_code == 403:
+            html_hits = self._extract_resources_from_page(dir_, id_)
+            if html_hits:
+                return html_hits
+        
+        logger.warn(f"【TG115】观影 downurl {dir_}/{id_} 失败: HTTP {resp.status_code}")
+        return []
+
+    def _parse_downurl(self, resp) -> List[SiteHit]:
+        """解析 downurl 响应。"""
         try:
             data = resp.json()
         except Exception as e:
@@ -313,7 +336,7 @@ class FilejinScraper:
             logger.warn(f"【TG115】观影 downurl 返回错误: {data}")
             return []
         hits: List[SiteHit] = []
-        # 1. panlist: 网盘链接（115/夸克/百度/阿里/迅雷/天翼/UC...）
+        # panlist
         pl = data.get("panlist") or {}
         urls = pl.get("url") or []
         names = pl.get("name") or []
@@ -324,7 +347,6 @@ class FilejinScraper:
             if not u or u == "javascript:;":
                 continue
             pwd = str(ps[i]).strip() if i < len(ps) else ""
-            # 提取码清洗：站点常填 "无提取码" / emoji 装饰
             if pwd in ("", "无提取码", "无"):
                 pwd = ""
             name = str(names[i]).strip() if i < len(names) else ""
@@ -337,7 +359,7 @@ class FilejinScraper:
                 pan_type=_classify_pan(u),
                 pan_label=label,
             ))
-        # 2. downlist: 磁力链接（list.m=明文btih, list.t=标题, list.s=大小, list.e=做种, list.n=时间）
+        # downlist: 磁力
         dl = data.get("downlist") or {}
         lst = dl.get("list") or {}
         ms = lst.get("m") or []
@@ -348,7 +370,7 @@ class FilejinScraper:
         for i, btih in enumerate(ms):
             btih = str(btih or "").strip().lower()
             if len(btih) != 40 or not all(c in "0123456789abcdef" for c in btih):
-                continue  # 非法 btih
+                continue
             title = str(ts[i]).strip() if i < len(ts) else ""
             size = str(ss[i]).strip() if i < len(ss) else ""
             seeders = str(es[i]).strip() if i < len(es) else ""
@@ -369,6 +391,30 @@ class FilejinScraper:
                 pub_date=pub or None,
             ))
         return hits
+
+    def _extract_resources_from_page(self, dir_: str, id_: str) -> List[SiteHit]:
+        """当 downurl API 被 403 时，尝试从资源页面提取网盘链接。"""
+        try:
+            page_url = f"{self.site_base}/res/downurl/{dir_}/{id_}"
+            resp = self._get_client().get(page_url, headers={"Accept": "text/html"})
+            if resp.status_code != 200:
+                return []
+            text = resp.text
+            hits: List[SiteHit] = []
+            # 提取所有网盘链接
+            for m in re.finditer(r'https?://(?:pan\.)?(?:quark\.cn|pan\.baidu\.com|yun\.baidu\.com|aliyundrive\.com|alipan\.com|pan\.xunlei\.com|115\.com|anxia\.com)[^\s"\'<>]+', text):
+                u = m.group(0)
+                hits.append(SiteHit(share_url=u, pan_type=_classify_pan(u)))
+            # 提取提取码
+            codes = re.findall(r'提取码[：:\s]*([A-Za-z0-9]{4})', text)
+            for i, h in enumerate(hits):
+                if i < len(codes):
+                    h.receive_code = codes[i]
+            if hits:
+                logger.info(f"【TG115】观影 downurl 403，从页面提取 {len(hits)} 条资源")
+            return hits
+        except Exception:
+            return []
 
     def _make_client(self):
         """创建 httpx.Client（同步），带 Chrome UA + 代理 + cookie jar。
