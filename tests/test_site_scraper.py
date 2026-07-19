@@ -122,6 +122,26 @@ class SiteScraperTest(unittest.TestCase):
         self.assertEqual("document", client.headers[1]["Sec-Fetch-Dest"])
         self.assertEqual("", scraper.last_detail_error)
 
+    def test_fetch_resources_uses_urllib_after_repeated_403(self):
+        client = _Client([
+            _Response(status_code=403, text="forbidden", content_type="text/html"),
+            _Response(status_code=403, text="forbidden", content_type="text/html"),
+        ])
+        scraper = site_scraper.FilejinScraper(app_auth="test")
+        scraper._http = client
+        scraper._fetch_resources_urllib = lambda _dir, _id: [
+            site_scraper.SiteHit(
+                share_url="https://115.com/s/urllib",
+                pan_type="115",
+            )
+        ]
+
+        hits = scraper._fetch_resources("tv", "2")
+
+        self.assertEqual(1, len(hits))
+        self.assertEqual("https://115.com/s/urllib", hits[0].share_url)
+        self.assertEqual("", scraper.last_detail_error)
+
 
 if __name__ == "__main__":
     unittest.main()

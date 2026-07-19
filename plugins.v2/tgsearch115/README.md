@@ -8,6 +8,8 @@ MoviePilot 插件：订阅新增时优先从 Telegram、观影和聚影搜索资
 
 - **三源搜索**：TG 公开频道、观影资源站和聚影开发者 API
 - **媒体身份确认**：使用 `MetaInfo`、`TorrentHelper` 和 `MediaChain` 校验标题、年份、类型、季号及 TMDB/豆瓣 ID
+- **精准手动搜索**：TG/观影/聚影结果按规范化片名和年份过滤，并按分享码或 URL 去重
+- **双客户端观影详情**：httpx/HTML 路径被 WAF 拒绝时，使用 urllib 独立 Cookie/PoW 会话降级
 - **TG 服务端搜索**：用 `t.me/s/{channel}?q=片名` 让 Telegram 服务器搜频道**全部历史**（不是只看最近 200 条），解决「明明有资源却搜不到」
 - **资源站 PoW 破解**：站点用 RSW 时间锁 PoW 反机器人，本插件用纯 Python `pow(x,1<<t,N)` 约 1.5 秒解出（C 层快速模幂），**无需浏览器、无新依赖**
 - **115 自动转存**：命中 115 链接后用 `p115client` 的 `share_snap` + `share_receive` 转存到指定目录
@@ -27,6 +29,7 @@ tgsearch115/
 ├── site_scraper.py      # 目标资源站爬虫：解 PoW + 搜索 + 全网盘资源提取
 ├── juying_scraper.py    # 聚影开发者 API
 ├── identity_matcher.py  # MoviePilot 原生媒体身份确认
+├── search_relevance.py  # 手动搜索片名/年份精准过滤
 ├── p115_transfer.py     # 115 转存：p115client share_snap + share_receive
 ├── requirements.txt     # beautifulsoup4 / p115client（httpx 随 p115client 安装）
 ├── README.md

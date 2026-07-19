@@ -83,6 +83,7 @@ from .tg_scraper import TgChannelScraper
 from .site_scraper import FilejinScraper
 from .juying_scraper import JuyingApi
 from .identity_matcher import confirm_candidate_identity
+from .search_relevance import extract_year, is_relevant_result
 
 
 # get_data / save_data 存储本插件配置使用的 key
@@ -199,7 +200,7 @@ class TgSearch115(_PluginBase):
         "订阅新增时优先到指定 Telegram 频道搜索 115 资源，命中并转存成功后自动完成订阅；"
         "未命中或转存失败则平滑回退到 MoviePilot 默认站点搜索。"
     )
-    plugin_version = "4.3.0"
+    plugin_version = "4.3.1"
     plugin_author = "MoviePilot User"
     plugin_icon = "T"
     plugin_config_prefix = "plugin.tgsearch115"
@@ -884,7 +885,8 @@ class TgSearch115(_PluginBase):
         ep_pat = r'[Ss]\d{1,2}[Ee]\d{1,3}|[Ee][Pp]?\s?\d{1,3}\b|全\s*\d{1,3}\s*集|更新至\s*\d|第\s*\d{1,3}(?:[-~]\d{1,3})?\s*集'
         name = ""
         # 1. "名称：/资源名称：/片名：/剧名：value" 标签取值（TG 消息常见格式）
-        for _lm in _re.finditer(r'(?:资源名称|片名|剧名|名称)\s*[:：]\s*([^\n【】|]{1,60})', t):
+        for _lm in _re.finditer(
+                r'(?:资源名称|片名|剧名|名称|电影|电视剧|动漫|动画)\s*[:：]\s*([^\n【】|]{1,60})', t):
             nv = _re.split(rf'(?:{qual})|(?:{ep_pat})', _lm.group(1), maxsplit=1)[0]
             nv = _re.sub(r'\s*[(（]\d{4}[)）]', '', nv).strip(' -–-·•|:：【】')
             if nv:
@@ -1213,6 +1215,7 @@ class TgSearch115(_PluginBase):
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
                 hits, has_more = ex.submit(_do_search).result(timeout=180)
             results = []
+            seen_results = set()
             for h in hits:
                 pt = getattr(h, "pan_type", "") or ""
                 if not pt:
@@ -1227,13 +1230,30 @@ class TgSearch115(_PluginBase):
                     display_name = f"{src_title} ({src_year})" if src_year else src_title
                 else:
                     display_name = meta["display_name"] or title
+                candidate_year = src_year or extract_year(h.text or display_name or title)
+                if not is_relevant_result(
+                        query_title=search_kw,
+                        query_year=manual_year,
+                        candidate_title=src_title or display_name or title,
+                        candidate_year=candidate_year,
+                ):
+                    continue
+                share_url = h.share_url or ""
+                if P115Transfer._is_115_share_url(share_url):
+                    share_code, _ = P115Transfer._extract_payload(share_url)
+                    dedupe_key = f"115:{share_code or share_url}".lower()
+                else:
+                    dedupe_key = share_url.strip().lower()
+                if not dedupe_key or dedupe_key in seen_results:
+                    continue
+                seen_results.add(dedupe_key)
                 results.append({
                     "title": title,
                     "display_name": display_name,
                     "meta": meta["meta"],
                     "is_complete": meta["is_complete"],
                     "episode_num": meta["episode_num"],
-                    "share_url": h.share_url,
+                    "share_url": share_url,
                     "receive_code": getattr(h, "receive_code", "") or "",
                     "channel": getattr(h, "channel_name", "") or "",
                     "pan_type": pt,
