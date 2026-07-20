@@ -3,6 +3,7 @@ import sys
 import types
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 
 class _Logger:
@@ -51,6 +52,13 @@ class _Client:
 
 
 class SiteScraperTest(unittest.TestCase):
+    def test_retry_delay_honors_retry_after(self):
+        delay = site_scraper.FilejinScraper._retry_delay(
+            SimpleNamespace(headers={"Retry-After": "7"}), 0
+        )
+        self.assertGreaterEqual(delay, 7)
+        self.assertLess(delay, 8)
+
     def test_normalizes_full_app_auth_cookie(self):
         scraper = site_scraper.FilejinScraper(
             app_auth="Cookie: PHPSESSID=session; app_auth=token-value; theme=dark"

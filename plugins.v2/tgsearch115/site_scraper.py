@@ -118,7 +118,9 @@ class FilejinScraper:
     """目标资源站爬虫：解 PoW -> 搜索 -> 提取全网盘资源。"""
 
     def __init__(self, app_auth: str = "", proxy: Optional[str] = None,
-                 count: int = 3, site_base: str = "") -> None:
+                 count: int = 3, site_base: str = "",
+                 detail_delay: Tuple[float, float] = (1.5, 3.0),
+                 max_retries: int = 1) -> None:
         self.app_auth = _normalize_app_auth(app_auth)
         self.proxy = (proxy or "").strip() or None
         self.count = count  # 每次（每页）取多少部作品的网盘资源
@@ -128,6 +130,10 @@ class FilejinScraper:
         self._cache_items = None     # search_suggest 作品列表缓存
         self.app_auth_valid = True   # app_auth 是否有效（失效则置 False，供 /search 提示）
         self.last_detail_error = ""  # 最近一次详情失败原因，供 API/连通测试展示
+        low, high = detail_delay
+        self.detail_delay = (max(0.5, float(low)), max(float(low), float(high)))
+        self.max_retries = min(3, max(0, int(max_retries)))
+        self.last_error_status: Optional[int] = None
         self.site_base = (site_base or DEFAULT_SITE_BASE).rstrip("/")  # 观影域名（可配置，换域名时改这里）
 
     def is_ready(self) -> bool:
@@ -151,6 +157,7 @@ class FilejinScraper:
         if not term:
             return [], False
         self.last_detail_error = ""
+        self.last_error_status = None
         cnt = count or self.count
         try:
             items = self._get_items(term, year)
@@ -165,7 +172,7 @@ class FilejinScraper:
                     continue
                 # 防风控：作品间随机延迟（首批除外），模仿人工浏览，避免短时连发 downurl
                 if idx > 0:
-                    time.sleep(random.uniform(0.4, 0.8))
+                    time.sleep(random.uniform(*self.detail_delay))
                 pan_hits = self._fetch_resources(dir_, id_)
                 for ph in pan_hits:
                     ph.source_title = str(it.get("title") or "")
@@ -298,15 +305,16 @@ class FilejinScraper:
     def _search_suggest(self, term: str):
         """GET /res/search_suggest?q= -> 作品列表。返回 (ok, msg, items)。"""
         url = self.site_base + "/res/search_suggest?q=" + quote(term)
-        resp = self._get_client().get(url, headers={"Accept": "application/json"})
+        resp = self._get_with_backoff(url, headers={"Accept": "application/json"})
         if resp.status_code != 200:
+            self.last_error_status = resp.status_code
             return False, f"HTTP {resp.status_code}", []
         text = resp.text or ""
         if "浏览器安全验证" in text or "powSolve" in text:
             # cookie 失效，重解 PoW 再试一次
             self._pow_solved = False
             self._ensure_access()
-            resp = self._get_client().get(url, headers={"Accept": "application/json"})
+            resp = self._get_with_backoff(url, headers={"Accept": "application/json"})
             text = resp.text or ""
         if "未登录" in text:
             return False, "未登录（app_auth 失效）", []
@@ -323,7 +331,7 @@ class FilejinScraper:
         url = f"{self.site_base}/res/downurl/{dir_}/{id_}"
         self.last_detail_error = ""
         try:
-            resp = self._get_client().get(url, headers={"Accept": "application/json"})
+            resp = self._get_with_backoff(url, headers={"Accept": "application/json"})
         except Exception as e:
             self.last_detail_error = f"网络异常: {e}"
             urllib_hits = self._fetch_resources_urllib(dir_, id_)
@@ -336,6 +344,11 @@ class FilejinScraper:
         hits = self._parse_detail_response(resp)
         if hits is not None:
             return hits
+        if self._looks_like_html(resp):
+            html_hits = self._parse_resources_from_html(resp.text or "")
+            if html_hits:
+                self.last_detail_error = ""
+                return html_hits
 
         # WAF 常只封 API 特征；以同一会话模拟页面导航再试一次。
         if resp.status_code in (403, 404) or self._looks_like_html(resp):
@@ -349,13 +362,19 @@ class FilejinScraper:
                 "Sec-Fetch-User": "?1",
             }
             try:
+                if resp.status_code == 403:
+                    delay = self._retry_delay(resp, 0)
+                    logger.warn(f"【TG115】观影触发 HTTP 403，{delay:.1f} 秒后以页面请求重试")
+                    time.sleep(delay)
                 retry = self._get_client().get(url, headers=retry_headers)
                 hits = self._parse_detail_response(retry)
                 if hits is not None:
+                    self.last_error_status = None
                     return hits
                 html_hits = self._parse_resources_from_html(retry.text or "")
                 if html_hits:
                     self.last_detail_error = ""
+                    self.last_error_status = None
                     logger.info(
                         f"【TG115】观影 downurl 页面兜底提取 {len(html_hits)} 条资源"
                     )
@@ -371,6 +390,7 @@ class FilejinScraper:
         urllib_hits = self._fetch_resources_urllib(dir_, id_)
         if urllib_hits is not None:
             self.last_detail_error = ""
+            self.last_error_status = None
             logger.info(
                 f"【TG115】观影 downurl urllib 直连兜底成功，提取 {len(urllib_hits)} 条资源"
             )
@@ -380,6 +400,37 @@ class FilejinScraper:
             f"【TG115】观影 downurl {dir_}/{id_} 失败: {self.last_detail_error}"
         )
         return []
+
+    def _get_with_backoff(self, url: str, headers: Optional[dict] = None):
+        """Retry WAF/throttle responses and honor Retry-After when supplied."""
+        response = None
+        for attempt in range(self.max_retries + 1):
+            response = self._get_client().get(url, headers=headers)
+            if response.status_code != 429:
+                if response.status_code == 403:
+                    self.last_error_status = 403
+                else:
+                    self.last_error_status = None
+                return response
+            self.last_error_status = response.status_code
+            if attempt >= self.max_retries:
+                return response
+            delay = self._retry_delay(response, attempt)
+            logger.warn(
+                f"【TG115】观影触发 HTTP {response.status_code}，{delay:.1f} 秒后重试"
+                f"（{attempt + 1}/{self.max_retries}）"
+            )
+            time.sleep(delay)
+        return response
+
+    @staticmethod
+    def _retry_delay(response, attempt: int) -> float:
+        retry_after = getattr(response, "headers", {}).get("Retry-After")
+        try:
+            delay = float(retry_after) if retry_after else float(2 ** (attempt + 1))
+        except (TypeError, ValueError):
+            delay = float(2 ** (attempt + 1))
+        return min(60.0, max(1.0, delay)) + random.uniform(0.2, 0.8)
 
     def _fetch_resources_urllib(self, dir_: str, id_: str) -> Optional[List[SiteHit]]:
         """httpx 被 WAF 拒绝时，用独立 urllib CookieJar + PoW 会话直连重试。"""

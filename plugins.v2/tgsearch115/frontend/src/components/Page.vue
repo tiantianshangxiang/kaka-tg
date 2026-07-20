@@ -32,8 +32,69 @@
             <div class="text-caption text-medium-emphasis">触发延迟</div>
             <div class="text-h6">{{ config.delay_seconds || 0 }} 秒</div>
           </v-col>
+          <v-col cols="12" md="4">
+            <div class="text-caption text-medium-emphasis">上次周期扫描</div>
+            <div class="text-body-2">{{ formatTime(runtime.scheduler.last_run) }}</div>
+          </v-col>
+          <v-col cols="12" md="4">
+            <div class="text-caption text-medium-emphasis">下次周期扫描</div>
+            <div class="text-body-2">{{ formatTime(runtime.scheduler.next_run) }}</div>
+          </v-col>
+          <v-col cols="12" md="4">
+            <div class="text-caption text-medium-emphasis">队列 / 本轮订阅</div>
+            <div class="text-body-2">{{ runtime.scheduler.queue_size || 0 }} / {{ runtime.scheduler.scanned_count || 0 }}</div>
+          </v-col>
         </v-row>
+        <div v-if="sourceStates.length" class="d-flex flex-wrap ga-2 mt-3">
+          <v-chip
+            v-for="source in sourceStates"
+            :key="source.name"
+            size="small"
+            variant="tonal"
+            :color="source.cooldown_seconds > 0 ? 'warning' : 'success'"
+          >{{ source.name }} · {{ source.cooldown_seconds > 0 ? `冷却 ${source.cooldown_seconds}s` : '可用' }}</v-chip>
+        </div>
       </v-card-text>
+    </v-card>
+
+    <v-card v-if="runtime.tasks.length" variant="outlined" rounded="lg" class="mb-4">
+      <v-card-title class="d-flex align-center px-4 py-3">
+        <v-icon icon="mdi-cloud-sync-outline" color="primary" class="mr-2" />
+        CMS / 115 任务
+        <v-spacer />
+        <v-btn icon variant="text" size="small" :loading="statusLoading" @click="loadRuntimeStatus">
+          <v-icon icon="mdi-refresh" />
+          <v-tooltip activator="parent" location="top">刷新任务状态</v-tooltip>
+        </v-btn>
+      </v-card-title>
+      <v-divider />
+      <v-table density="compact">
+        <thead>
+          <tr><th>资源</th><th>状态</th><th>提交时间</th><th class="text-right">操作</th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="task in runtime.tasks" :key="`${task.btih}-${task.submitted_at}`">
+            <td>
+              <div class="task-title">{{ task.title }}</div>
+              <div class="text-caption text-medium-emphasis">BTIH {{ String(task.btih || '').slice(0, 12) }}...</div>
+              <div v-if="task.error" class="text-caption text-error">{{ task.error }}</div>
+            </td>
+            <td><v-chip size="x-small" variant="tonal" :color="taskStatusColor(task.status)">{{ taskStatusLabel(task.status) }}</v-chip></td>
+            <td class="text-caption">{{ formatTime(task.submitted_at) }}</td>
+            <td class="text-right">
+              <v-btn
+                v-if="['failed', 'timed_out'].includes(task.status)"
+                icon variant="text" size="small" color="primary"
+                :loading="retryingBtih === task.btih"
+                @click="retryTask(task)"
+              >
+                <v-icon icon="mdi-replay" />
+                <v-tooltip activator="parent" location="top">重试任务</v-tooltip>
+              </v-btn>
+            </td>
+          </tr>
+        </tbody>
+      </v-table>
     </v-card>
 
     <!-- ============ 手动搜索 ============ -->
@@ -137,7 +198,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { filterSearchResults, QUALITY_FILTERS, RESOURCE_FILTERS } from '../searchFilters.js'
 
 const props = defineProps({
@@ -149,6 +210,15 @@ const PID = computed(() => props.pluginId || 'TgSearch115')
 
 // ---- 配置 / 状态 ----
 const config = reactive({ enabled: false, p115_cookie: '', cms_url: '', cms_token: '', delay_seconds: 0, tg_channels: [] })
+const runtime = reactive({
+  scheduler: { running: false, last_run: '', next_run: '', scanned_count: 0, queue_size: 0 },
+  sources: {},
+  tasks: [],
+})
+const statusLoading = ref(false)
+const retryingBtih = ref('')
+let statusTimer = null
+const sourceStates = computed(() => Object.entries(runtime.sources || {}).map(([name, state]) => ({ name, ...state })))
 const channelCount = computed(() => (Array.isArray(config.tg_channels) ? config.tg_channels.length : 0))
 const loginOk = computed(() => {
   const c = String(config.p115_cookie || '')
@@ -208,6 +278,56 @@ const PAN_LABEL = { '115': '115', quark: '夸克', baidu: '百度', aliyun: '阿
 const PAN_COLOR = { '115': 'success', quark: 'info', baidu: 'error', aliyun: 'cyan', xunlei: 'purple', cloud189: 'indigo', uc: 'orange', magnet: 'deep-purple', other: 'grey' }
 function panLabel(t) { return PAN_LABEL[t] || t || '其他' }
 function panColor(t) { return PAN_COLOR[t] || 'grey' }
+function formatTime(value) {
+  if (!value) return '尚未运行'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
+}
+function taskStatusLabel(status) {
+  return {
+    waiting: '等待中', downloading: '下载中', pending_organize: '待整理',
+    completed: '已完成', failed: '失败', timed_out: '超时',
+  }[status] || status || '未知'
+}
+function taskStatusColor(status) {
+  return {
+    waiting: 'info', downloading: 'primary', pending_organize: 'warning',
+    completed: 'success', failed: 'error', timed_out: 'warning',
+  }[status] || 'grey'
+}
+
+async function loadRuntimeStatus() {
+  if (!props.api?.get) return
+  statusLoading.value = true
+  try {
+    const res = await props.api.get(`plugin/${PID.value}/runtime/status`)
+    const data = res && typeof res === 'object' && 'data' in res && ('success' in res || 'code' in res) ? res.data : res
+    if (data?.success) {
+      Object.assign(runtime.scheduler, data.scheduler || {})
+      runtime.sources = data.sources || {}
+      runtime.tasks = Array.isArray(data.tasks) ? data.tasks : []
+    }
+  } catch {
+    // Status refresh is non-blocking; search actions continue to work.
+  } finally {
+    statusLoading.value = false
+  }
+}
+
+async function retryTask(task) {
+  if (!props.api?.post || !task?.btih) return
+  retryingBtih.value = task.btih
+  try {
+    const res = await props.api.post(`plugin/${PID.value}/tasks/retry`, { btih: task.btih })
+    const data = res && typeof res === 'object' && 'data' in res && ('success' in res || 'code' in res) ? res.data : res
+    showSnack(data?.message || (data?.success ? '任务已重新提交' : '重试失败'), data?.success ? 'success' : 'error')
+    await loadRuntimeStatus()
+  } catch (e) {
+    showSnack('重试异常：' + (e?.message || e), 'error')
+  } finally {
+    retryingBtih.value = ''
+  }
+}
 
 async function doSearch() {
   const kw = (keyword.value || '').trim()
@@ -327,6 +447,12 @@ onMounted(async () => {
   } catch {
     // 静默
   }
+  await loadRuntimeStatus()
+  statusTimer = setInterval(loadRuntimeStatus, 30000)
+})
+
+onUnmounted(() => {
+  if (statusTimer) clearInterval(statusTimer)
 })
 </script>
 
@@ -370,5 +496,11 @@ onMounted(async () => {
   text-align: center;
   color: rgba(var(--v-theme-on-surface), 0.55);
   font-size: 0.875rem;
+}
+.task-title {
+  max-width: 520px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

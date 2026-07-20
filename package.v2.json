@@ -1,12 +1,13 @@
 {
   "TgSearch115": {
     "name": "拦截mp订阅",
-    "description": "订阅新增时搜索 Telegram、观影和聚影；完整观影磁力经 MoviePilot 规则与媒体身份确认后通过 CMS 离线到 115，115 分享可直接转存，失败则回退默认搜索。",
+    "description": "新增订阅或周期任务搜索 Telegram、观影和聚影；完整观影磁力经 MoviePilot 规则与媒体身份确认后通过 CMS 离线到 115，115 分享可直接转存，失败则回退默认搜索。",
     "labels": "订阅,Telegram,115网盘",
-    "version": "4.5.1",
+    "version": "4.6.0",
     "author": "MoviePilot User",
     "level": 2,
     "history": {
+      "v4.6.0": "周期搜索、来源风控与 CMS/115 整理闭环：新增单一有界优先队列，支持每 1/2/3 小时扫描 MoviePilot state=N 活动订阅并随机抖动，手动搜索优先；TG 并发/翻页间隔、观影详情间隔、TTL 缓存、Retry-After、指数退避和来源熔断均可配置。CMS 任务持久化媒体 ID、BTIH、状态与错误并跨重启去重，只有 MoviePilot 完成历史才确认整理完成，超时恢复订阅；详情页新增调度、来源冷却和脱敏任务状态及失败重试。",
       "v4.5.1": "CMS 检查交互修复：检查按钮改用独立 POST 请求直接验证当前表单中的 CMS 地址和 Token，不再先保存配置触发 MoviePilot 关闭弹窗；Token 不进入 URL，检查仍不会创建磁力离线任务。",
       "v4.5.0": "CMS/115 磁力离线：完整观影磁力继续先过 MoviePilot 规则组、include/exclude/画质和 TMDB/豆瓣身份确认，再调用 Cloud Media Sync 官方 Token 接口创建 115 离线任务，不再交给任意 MoviePilot 下载器。CMS 提交失败会继续尝试后续 115 分享；任务接收成功只暂停订阅等待下载同步，不再误报已下载完成。观影设置新增 CMS 地址/Token，两处手动搜索支持磁力一键离线到 115，高帧率筛选补充中文“60帧/60帧率”等格式。",
       "v4.4.1": "配置迁移修复：/config/get 将新增默认字段与旧版已保存配置合并，升级后 site_magnet_priority 明确返回 true 并在观影设置中正确显示开启，不再出现运行态已启用但接口字段为 null。",

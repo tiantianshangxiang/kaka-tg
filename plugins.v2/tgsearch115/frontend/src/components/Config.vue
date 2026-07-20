@@ -294,6 +294,41 @@
               <v-text-field v-model="config.delay_seconds" label="触发延迟（秒）" variant="outlined" density="comfortable" type="number" hide-details hint="订阅创建后等待几秒再触发" persistent-hint />
             </v-col>
             <v-col cols="12" md="6" class="d-flex align-center">
+              <span class="text-body-2 mr-2">周期搜索 MP 活动订阅</span>
+              <v-spacer />
+              <v-switch v-model="config.periodic_enabled" color="primary" hide-details density="compact" />
+            </v-col>
+            <v-col cols="12" md="4">
+              <v-select v-model="config.period_hours" :items="periodOptions" label="搜索周期" variant="outlined" density="compact" hide-details />
+            </v-col>
+            <v-col cols="12" md="4">
+              <v-text-field v-model="config.jitter_minutes" label="随机抖动（分钟）" type="number" min="0" max="10" variant="outlined" density="compact" hide-details />
+            </v-col>
+            <v-col cols="12" md="4">
+              <v-text-field v-model="config.search_cache_hours" label="搜索缓存（小时）" type="number" min="1" max="6" variant="outlined" density="compact" hide-details />
+            </v-col>
+            <v-col cols="12" md="4">
+              <v-select v-model="config.tg_concurrency" :items="tgConcurrencyOptions" label="TG 并发" variant="outlined" density="compact" hide-details />
+            </v-col>
+            <v-col cols="6" md="4">
+              <v-text-field v-model="config.tg_page_delay_min" label="TG 最小间隔（秒）" type="number" step="0.1" min="0.2" variant="outlined" density="compact" hide-details />
+            </v-col>
+            <v-col cols="6" md="4">
+              <v-text-field v-model="config.tg_page_delay_max" label="TG 最大间隔（秒）" type="number" step="0.1" min="0.2" variant="outlined" density="compact" hide-details />
+            </v-col>
+            <v-col cols="6" md="3">
+              <v-text-field v-model="config.source_item_delay_min" label="订阅最小间隔（秒）" type="number" min="0" variant="outlined" density="compact" hide-details />
+            </v-col>
+            <v-col cols="6" md="3">
+              <v-text-field v-model="config.source_item_delay_max" label="订阅最大间隔（秒）" type="number" min="0" variant="outlined" density="compact" hide-details />
+            </v-col>
+            <v-col cols="6" md="3">
+              <v-text-field v-model="config.source_failure_threshold" label="熔断失败次数" type="number" min="1" max="5" variant="outlined" density="compact" hide-details />
+            </v-col>
+            <v-col cols="6" md="3">
+              <v-select v-model="config.source_cooldown_minutes" :items="cooldownOptions" label="来源冷却" variant="outlined" density="compact" hide-details />
+            </v-col>
+            <v-col cols="12" md="6" class="d-flex align-center">
               <span class="text-body-2 mr-2">转存成功通知</span>
               <v-switch v-model="config.notify_success" color="primary" hide-details density="compact" />
             </v-col>
@@ -336,6 +371,15 @@
             </v-col>
             <v-col cols="12">
               <v-text-field v-model="config.cms_token" label="CMS API Token" :type="showSecrets ? 'text' : 'password'" variant="outlined" density="compact" hide-details hint="对应 CMS_API_TOKEN；仅保存在 MoviePilot 插件配置中" persistent-hint />
+            </v-col>
+            <v-col cols="12" md="4">
+              <v-text-field v-model="config.cms_timeout_hours" label="CMS 任务超时（小时）" type="number" min="1" max="72" variant="outlined" density="compact" hide-details />
+            </v-col>
+            <v-col cols="6" md="4">
+              <v-text-field v-model="config.site_detail_delay_min" label="观影最小间隔（秒）" type="number" step="0.1" min="0.5" variant="outlined" density="compact" hide-details />
+            </v-col>
+            <v-col cols="6" md="4">
+              <v-text-field v-model="config.site_detail_delay_max" label="观影最大间隔（秒）" type="number" step="0.1" min="0.5" variant="outlined" density="compact" hide-details />
             </v-col>
             <v-col cols="12">
               <v-text-field v-model="config.site_domain" label="观影站点域名" placeholder="https://www.xn--wcv59z.com" variant="outlined" density="compact" hide-details hint="观影站换域名时填这里；留空用默认 xn--wcv59z.com" persistent-hint />
@@ -553,6 +597,20 @@ const DEFAULTS = {
   notify_success: true,
   notify_fail: false,
   auto_finish: true,
+  periodic_enabled: true,
+  period_hours: 2,
+  jitter_minutes: 10,
+  source_item_delay_min: 5,
+  source_item_delay_max: 10,
+  search_cache_hours: 2,
+  source_failure_threshold: 3,
+  source_cooldown_minutes: 60,
+  tg_concurrency: 2,
+  tg_page_delay_min: 0.8,
+  tg_page_delay_max: 1.5,
+  site_detail_delay_min: 1.5,
+  site_detail_delay_max: 3,
+  cms_timeout_hours: 12,
   site_enabled: false,
   site_app_auth: '',
   site_magnet_priority: true,
@@ -572,6 +630,21 @@ const channels = ref([])
 const activeTab = ref('transfer')
 const showSecrets = ref(false)
 const saving = ref(false)
+const periodOptions = [
+  { title: '每 1 小时', value: 1 },
+  { title: '每 2 小时', value: 2 },
+  { title: '每 3 小时', value: 3 },
+]
+const tgConcurrencyOptions = [
+  { title: '1（最保守）', value: 1 },
+  { title: '2（推荐）', value: 2 },
+  { title: '3', value: 3 },
+]
+const cooldownOptions = [
+  { title: '30 分钟', value: 30 },
+  { title: '45 分钟', value: 45 },
+  { title: '60 分钟', value: 60 },
+]
 
 const newName = ref('')
 const newId = ref('')

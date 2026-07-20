@@ -12,7 +12,7 @@ v4.0 核心改进：使用 Telegram 网页预览版的 **服务端搜索** ``?q=
 年份 / 分辨率 / 字幕组等精细过滤交给 MoviePilot 的规则引擎 ``_filter_resources`` 处理。
 
 稳定性设计：
-- 并发搜索 + Semaphore(5) 限流 + 随机延迟防 429。
+- 可配置低并发搜索 + 随机延迟 + 429/403 退避。
 - timeout=10s + 全异常捕获，绝不崩溃主线程。
 - pub_date 从 <time datetime="..."> 提取，兜底当前时间。
 - 私有频道前置过滤。
@@ -87,10 +87,19 @@ class TgChannelScraper:
 
     def __init__(self, channels: Optional[List[Dict[str, str]]] = None,
                  proxy: Optional[str] = None,
-                 max_pages: int = MAX_PAGES_PER_CHANNEL) -> None:
+                 max_pages: int = MAX_PAGES_PER_CHANNEL,
+                 concurrency: int = 2,
+                 page_delay: Tuple[float, float] = (0.8, 1.5),
+                 max_retries: int = 2) -> None:
         self.channels = channels or []
         self.proxy = (proxy or "").strip() or None
-        self.max_pages = max_pages
+        self.max_pages = max(1, int(max_pages))
+        self.concurrency = min(3, max(1, int(concurrency or 2)))
+        low, high = page_delay
+        self.page_delay = (max(0.2, float(low)), max(float(low), float(high)))
+        self.max_retries = min(3, max(0, int(max_retries)))
+        self.last_error_status: Optional[int] = None
+        self.last_error = ""
 
     def is_ready(self) -> bool:
         return bool(self.channels)
@@ -100,6 +109,8 @@ class TgChannelScraper:
         if not self.is_ready():
             logger.warn("【TG115】未配置任何 TG 频道")
             return []
+        self.last_error_status = None
+        self.last_error = ""
         try:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
@@ -159,7 +170,7 @@ class TgChannelScraper:
             return []
         encoded_term = quote(search_term)
 
-        sem = asyncio.Semaphore(5)
+        sem = asyncio.Semaphore(self.concurrency)
 
         # 前置过滤：跳过私有频道
         valid_channels = []
@@ -213,7 +224,7 @@ class TgChannelScraper:
 
         ch_hits: List[TgHit] = []
         async with sem:
-            await asyncio.sleep(random.uniform(0.5, 1.5))
+            await asyncio.sleep(random.uniform(*self.page_delay))
             try:
                 total_msgs = 0
                 before_id = None  # 翻页用：上一页最旧的消息 ID
@@ -225,8 +236,10 @@ class TgChannelScraper:
                     else:
                         url = f"https://t.me/s/{cid}?q={encoded_term}"
 
-                    resp = await client.get(url)
+                    resp = await self._get_with_backoff(client, url, cname, page + 1)
                     if resp.status_code != 200:
+                        self.last_error_status = resp.status_code
+                        self.last_error = f"HTTP {resp.status_code}"
                         logger.warn(
                             f"【TG115】频道 [{cname}] 搜索第 {page+1} 页失败: HTTP {resp.status_code}"
                         )
@@ -303,7 +316,7 @@ class TgChannelScraper:
                     if page_oldest_id is None or page_oldest_id <= 1:
                         break
                     before_id = page_oldest_id
-                    await asyncio.sleep(random.uniform(0.3, 0.8))
+                    await asyncio.sleep(random.uniform(*self.page_delay))
 
                 logger.info(
                     f"【TG115】频道 [{cname}] 搜索 '{encoded_term}' "
@@ -312,6 +325,28 @@ class TgChannelScraper:
             except Exception as e:
                 logger.warn(f"【TG115】搜索频道 [{cname}] 出错（跳过）: {e}")
             return ch_hits
+
+    async def _get_with_backoff(self, client, url: str, channel: str, page: int):
+        """Retry throttled requests while respecting Retry-After when present."""
+        response = None
+        for attempt in range(self.max_retries + 1):
+            response = await client.get(url)
+            if response.status_code not in (403, 429):
+                return response
+            if attempt >= self.max_retries:
+                return response
+            retry_after = response.headers.get("Retry-After")
+            try:
+                delay = float(retry_after) if retry_after else float(2 ** (attempt + 1))
+            except (TypeError, ValueError):
+                delay = float(2 ** (attempt + 1))
+            delay = min(60.0, max(1.0, delay)) + random.uniform(0.2, 0.8)
+            logger.warn(
+                f"【TG115】频道 [{channel}] 第 {page} 页触发 HTTP {response.status_code}，"
+                f"{delay:.1f} 秒后重试（{attempt + 1}/{self.max_retries}）"
+            )
+            await asyncio.sleep(delay)
+        return response
 
     def _make_client(self):
         """创建 httpx.AsyncClient，带 Chrome UA + 代理 + 10s 超时。"""

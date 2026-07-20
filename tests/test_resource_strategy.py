@@ -67,6 +67,35 @@ class ResourceStrategyTest(unittest.TestCase):
 
         self.assertEqual([], selected)
 
+    def test_cms_failure_continues_with_115_share(self):
+        candidates = [
+            _torrent("magnet:?xt=urn:btih:" + "d" * 40, "magnet"),
+            _torrent("magnet:?xt=urn:btih:" + "e" * 40, "magnet"),
+            _torrent("https://115.com/s/fallback", "115"),
+        ]
+        submitted_magnets = []
+        transferred_shares = []
+
+        result = resource_strategy.execute_auto_candidates(
+            candidates=candidates,
+            confirm_identity=lambda _candidate: SimpleNamespace(
+                confirmed=True, recognition_attempted=True
+            ),
+            submit_magnet=lambda candidate: (
+                submitted_magnets.append(candidate.page_url) or False,
+                "CMS unavailable",
+            ),
+            transfer_share=lambda candidate: (
+                transferred_shares.append(candidate.page_url) or True,
+                "transferred",
+            ),
+        )
+
+        self.assertEqual(1, len(submitted_magnets))
+        self.assertEqual(["https://115.com/s/fallback"], transferred_shares)
+        self.assertEqual("https://115.com/s/fallback", result.candidate.page_url)
+        self.assertFalse(result.via_magnet)
+
 
 if __name__ == "__main__":
     unittest.main()

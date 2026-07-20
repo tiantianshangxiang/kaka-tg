@@ -4,17 +4,9 @@
 ================================================================================
  一、整体设计
 ================================================================================
-1. 触发：监听 ``EventType.SubscribeAdded``（订阅新增）。该事件由
-   ``SubscribeChain.add`` 发出，经 EventBus 的独立消费线程派发。本插件在处理器
-   内再起一个守护线程执行实际工作，**绝不阻塞 MoviePilot 主流程**。
-
-   说明：MoviePilot 的 EventBus 是「队列 + 独立消费线程」模型（见
-   ``app/core/event.py``），事件处理器无法同步阻断事件发起方。因此"拦截并阻断
-   原有搜索"采用的是「抢跑完成」策略——在 MP 默认的定时站点搜索跑起来之前，
-   用 TG+115 把订阅完成掉（写历史 / 删订阅 / 发 SubscribeComplete），
-   MP 的默认搜索自然无订阅可做；任何环节失败则静默 return，MP 默认搜索照常进行。
-   系统中并不存在 ``EventType.SearchStart`` 之类可阻断的搜索事件，
-   ``SubscribeAdded`` 是实现该目标的正确且唯一的钩子。
+1. 触发：监听 ``EventType.SubscribeAdded``，并按配置每 1/2/3 小时扫描一次
+   MoviePilot ``state=N`` 活动订阅。新增订阅、周期订阅和手动搜索统一进入单一
+   有界优先队列，避免创建无界线程；手动操作优先于等待中的周期任务。
 
 2. TG 搜索：用网页爬虫（httpx + BeautifulSoup）抓取 ``t.me/s/{channel}`` 公开频道，
    通过服务端搜索 ``?q=关键字`` 检索频道全部历史消息，提取其中的 115 分享链接
@@ -84,12 +76,15 @@ from .site_scraper import FilejinScraper
 from .juying_scraper import JuyingApi
 from .identity_matcher import confirm_candidate_identity
 from .search_relevance import extract_year, is_relevant_result
-from .resource_strategy import is_magnet_url, select_auto_candidates
+from .resource_strategy import execute_auto_candidates, is_magnet_url, select_auto_candidates
 from .cms_client import Cms115Client
+from .cms_tasks import CmsTaskLedger, btih_from_magnet
+from .runtime_control import SearchCoordinator, SourceCircuitBreaker, TtlCache
 
 
 # get_data / save_data 存储本插件配置使用的 key
 CONFIG_KEY = "config"
+CMS_TASKS_KEY = "cms_tasks"
 
 
 # ============================ 115 扫码登录（直连稳定 115 二维码接口） ============================
@@ -194,16 +189,16 @@ def _qr_result(uid: str, app: str):
 
 
 class TgSearch115(_PluginBase):
-    """订阅新增 -> TG 频道搜索 115 -> 转存 -> 完成订阅；失败平滑回退。"""
+    """新增/周期订阅 -> 多来源搜索 -> 115 处理；失败平滑回退。"""
 
     # ============================ 插件元信息 ============================
     plugin_name = "拦截mp订阅"
     plugin_desc = (
-        "订阅新增时搜索 Telegram、观影和聚影，确认匹配的观影磁力通过 CMS 离线到 115，"
+        "新增订阅和周期任务搜索 Telegram、观影和聚影，确认匹配的观影磁力通过 CMS 离线到 115，"
         "并支持 115 分享直接转存；"
         "未命中或转存失败则平滑回退到 MoviePilot 默认站点搜索。"
     )
-    plugin_version = "4.5.1"
+    plugin_version = "4.6.0"
     plugin_author = "MoviePilot User"
     plugin_icon = "T"
     plugin_config_prefix = "plugin.tgsearch115"
@@ -220,6 +215,10 @@ class TgSearch115(_PluginBase):
     _mp_proxy: str = ""
     _transfer: Optional[P115Transfer] = None
     _cms_client: Optional[Cms115Client] = None
+    _coordinator: Optional[SearchCoordinator] = None
+    _search_cache: Optional[TtlCache] = None
+    _source_breaker: Optional[SourceCircuitBreaker] = None
+    _cms_tasks: Optional[CmsTaskLedger] = None
 
     # 配置项（运行态缓存）
     _tg_channels: List[Dict[str, Any]] = []
@@ -236,6 +235,12 @@ class TgSearch115(_PluginBase):
     _site_magnet_priority = True
     _cms_url = ""
     _cms_token = ""
+    _periodic_enabled = True
+    _period_hours = 2
+    _jitter_minutes = 10
+    _source_item_delay_min = 5.0
+    _source_item_delay_max = 10.0
+    _cms_timeout_hours = 12
     # ============================ 生命周期 ============================
     def init_plugin(self, config: dict = None):
         """生效配置。
@@ -245,12 +250,15 @@ class TgSearch115(_PluginBase):
           由于本插件用 ``get_data`` 持久化，``get_config()`` 为空，故 config 为
           None 时回退到 ``get_data(CONFIG_KEY)`` 读取已保存配置。
         """
+        self._stop_coordinator()
         if config is None:
             config = self.get_data(CONFIG_KEY) or {}
         if not isinstance(config, dict):
             config = {}
 
         self._apply_config(config)
+        stored_tasks = self.get_data(CMS_TASKS_KEY) or []
+        self._cms_tasks = CmsTaskLedger(stored_tasks if isinstance(stored_tasks, list) else [])
 
         # 持久化（保证 get_data 可读、字段干净）
         try:
@@ -261,6 +269,7 @@ class TgSearch115(_PluginBase):
         if self._enabled:
             logger.info("【TG115】插件已启用")
             self._check_deps()
+            self._start_coordinator()
 
     def _apply_config(self, config: dict):
         """把配置字典解析到运行态字段，并重建搜索器 / 转存器。"""
@@ -274,6 +283,23 @@ class TgSearch115(_PluginBase):
         self._notify_success = self._to_bool(config.get("notify_success"), True)
         self._notify_fail = self._to_bool(config.get("notify_fail"), False)
         self._auto_finish = self._to_bool(config.get("auto_finish"), True)
+        self._periodic_enabled = self._to_bool(config.get("periodic_enabled"), True)
+        self._period_hours = min(3, max(1, self._safe_int(config.get("period_hours"), 2)))
+        self._jitter_minutes = min(10, max(0, self._safe_int(config.get("jitter_minutes"), 10)))
+        self._source_item_delay_min = self._safe_float(config.get("source_item_delay_min"), 5.0)
+        self._source_item_delay_max = max(
+            self._source_item_delay_min,
+            self._safe_float(config.get("source_item_delay_max"), 10.0),
+        )
+        cache_hours = min(6, max(1, self._safe_int(config.get("search_cache_hours"), 2)))
+        failure_threshold = min(5, max(1, self._safe_int(config.get("source_failure_threshold"), 3)))
+        cooldown_minutes = min(60, max(30, self._safe_int(config.get("source_cooldown_minutes"), 60)))
+        self._cms_timeout_hours = min(72, max(1, self._safe_int(config.get("cms_timeout_hours"), 12)))
+        self._search_cache = TtlCache(ttl_seconds=cache_hours * 3600)
+        self._source_breaker = SourceCircuitBreaker(
+            failure_threshold=failure_threshold,
+            cooldown_seconds=cooldown_minutes * 60,
+        )
         # TG 频道列表：自定义前端直接以数组/JSON 字符串形式提交 tg_channels
         self._tg_channels = self._parse_channels(config.get("tg_channels"))
 
@@ -286,7 +312,15 @@ class TgSearch115(_PluginBase):
                 _proxy = _mp_proxy.get("https") or _mp_proxy.get("http") or ""
         except Exception:
             pass
-        self._scraper = TgChannelScraper(channels=enabled_channels, proxy=_proxy)
+        tg_concurrency = min(3, max(1, self._safe_int(config.get("tg_concurrency"), 2)))
+        tg_delay_min = self._safe_float(config.get("tg_page_delay_min"), 0.8)
+        tg_delay_max = max(tg_delay_min, self._safe_float(config.get("tg_page_delay_max"), 1.5))
+        self._scraper = TgChannelScraper(
+            channels=enabled_channels,
+            proxy=_proxy,
+            concurrency=tg_concurrency,
+            page_delay=(tg_delay_min, tg_delay_max),
+        )
         self._mp_proxy = _proxy  # 供 /check_site 临时测试用
         # 观影爬虫（PoW + 搜索 + 全网盘提取；115 分享和确认后的磁力可自动处理）
         self._site_enabled = self._to_bool(config.get("site_enabled"), False)
@@ -307,8 +341,15 @@ class TgSearch115(_PluginBase):
         self._site_proxy = _proxy if sp == 'proxy' else (None if not sp or sp == 'direct' else sp)
         self._site_domain = (config.get("site_domain") or "").strip()  # 观影域名（换域名时改这里）
         if self._site_enabled and self._site_app_auth:
+            site_delay_min = self._safe_float(config.get("site_detail_delay_min"), 1.5)
+            site_delay_max = max(
+                site_delay_min, self._safe_float(config.get("site_detail_delay_max"), 3.0)
+            )
             self._site_scraper = FilejinScraper(
-                app_auth=self._site_app_auth, proxy=self._site_proxy, site_base=self._site_domain,
+                app_auth=self._site_app_auth,
+                proxy=self._site_proxy,
+                site_base=self._site_domain,
+                detail_delay=(site_delay_min, site_delay_max),
             )
         else:
             self._site_scraper = None
@@ -420,6 +461,20 @@ class TgSearch115(_PluginBase):
                 "description": "只检查服务与配置，不创建磁力任务",
             },
             {
+                "path": "/runtime/status",
+                "endpoint": self.__runtime_status_api,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "获取周期搜索、来源冷却和 CMS 任务状态",
+            },
+            {
+                "path": "/tasks/retry",
+                "endpoint": self.__retry_cms_task_api,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "重试失败或超时的 CMS 磁力任务",
+            },
+            {
                 "path": "/search",
                 "endpoint": self.__search_api,
                 "methods": ["GET"],
@@ -497,9 +552,40 @@ class TgSearch115(_PluginBase):
         return "vue", "frontend/dist/assets"
 
     def stop_service(self):
-        """停止插件：清理运行态。守护线程为 daemon，随主进程退出。"""
+        """停止插件并等待内部调度线程退出。"""
+        self._stop_coordinator()
         with self._lock:
             self._running_ids.clear()
+
+    def _start_coordinator(self):
+        """Start the single bounded queue used by event, periodic and manual searches."""
+        self._stop_coordinator()
+        self._coordinator = SearchCoordinator(
+            process_subscription=self._handle_subscribe,
+            list_subscriptions=self._periodic_subscriptions,
+            interval_hours=self._period_hours,
+            jitter_minutes=self._jitter_minutes,
+            between_items=(self._source_item_delay_min, self._source_item_delay_max),
+            queue_size=100,
+            periodic_enabled=self._periodic_enabled,
+        )
+        self._coordinator.start()
+        logger.info(
+            f"【TG115】搜索队列已启动，周期搜索"
+            f"{'已开启' if self._periodic_enabled else '已关闭'}，"
+            f"周期 {self._period_hours} 小时，随机抖动 0-{self._jitter_minutes} 分钟"
+        )
+
+    def _stop_coordinator(self):
+        coordinator = self._coordinator
+        self._coordinator = None
+        if coordinator:
+            coordinator.stop()
+
+    def _periodic_subscriptions(self):
+        """Reconcile CMS records, then return all subscriptions for active filtering."""
+        self._reconcile_cms_tasks()
+        return SubscribeOper().list() or []
 
     # ============================ 事件入口 ============================
     @eventmanager.register(EventType.SubscribeAdded)
@@ -515,12 +601,10 @@ class TgSearch115(_PluginBase):
         subscribe_id = data.get("subscribe_id")
         if not subscribe_id:
             return
-        threading.Thread(
-            target=self._handle_subscribe,
-            args=(int(subscribe_id),),
-            name="tg115-subscribe",
-            daemon=True,
-        ).start()
+        if self._coordinator and self._coordinator.enqueue_subscription(
+                int(subscribe_id), priority=0):
+            return
+        logger.warn(f"【TG115】订阅 {subscribe_id} 未能进入搜索队列，将由周期任务重试")
 
     # ============================ 核心流程 ============================
     def _handle_subscribe(self, subscribe_id: int):
@@ -551,15 +635,7 @@ class TgSearch115(_PluginBase):
 
             keyword = self._build_keyword(subscribe)
             logger.info(f"【TG115】订阅 [{subscribe.name}] 开始搜索，关键字: {keyword}")
-            # 双源搜索：TG 频道（全 115）+ 观影（全网盘，115 占少数）
-            hits = []
-            if self._scraper:
-                hits.extend(self._scraper.search(keyword))
-            if self._site_scraper:
-                site_hits, _ = self._site_scraper.search(keyword, year=subscribe.year)
-                hits.extend(site_hits)
-            if self._juying_api:
-                hits.extend(self._juying_api.search(keyword, year=subscribe.year))
+            hits = self._search_auto_sources(keyword, subscribe.year)
             if not hits:
                 logger.info(f"【TG115】订阅 [{subscribe.name}] 未找到资源，回退到默认搜索")
                 self._send_fail_notify(subscribe, "TG、观影与聚影均未找到资源")
@@ -597,19 +673,7 @@ class TgSearch115(_PluginBase):
                 )
                 self._send_fail_notify(subscribe, f"命中 {len(matched)} 条但无可自动处理资源")
                 return
-            best = None
-            transfer_msg = ""
-            via_cms_magnet = False
-            transfer_errors = []
-            recognition_attempts = 0
-            cms_submit_failed = False
-            for candidate in auto_candidates:
-                candidate_url = candidate.page_url or ""
-                candidate_is_magnet = is_magnet_url(candidate_url)
-                # A CMS connectivity/authentication failure is shared by all magnets in this run.
-                # Skip the remaining magnets so a valid 115 share can still be tried.
-                if candidate_is_magnet and cms_submit_failed:
-                    continue
+            def confirm(candidate):
                 identity = confirm_candidate_identity(
                     subscribe=subscribe,
                     target_media=mediainfo,
@@ -620,45 +684,34 @@ class TgSearch115(_PluginBase):
                     f"confirmed={identity.confirmed}, source={identity.match_source}, "
                     f"reason={identity.reason}"
                 )
-                if identity.recognition_attempted:
-                    recognition_attempts += 1
-                if not identity.confirmed:
-                    if recognition_attempts >= 3:
-                        break
-                    continue
+                return identity
 
-                if candidate_is_magnet:
-                    ok, msg = self._submit_magnet_to_115(candidate)
-                    action = "CMS 115 磁力离线任务提交"
-                else:
-                    ok, msg, _data = (
-                        self._transfer.transfer(candidate_url, self._p115_target)
-                        if self._transfer
-                        else (False, "转存模块未初始化", {})
-                    )
-                    action = "115 转存"
-                if ok:
-                    best = candidate
-                    transfer_msg = msg
-                    via_cms_magnet = candidate_is_magnet
-                    break
-
-                transfer_errors.append(f"{action}失败: {msg}")
-                if candidate_is_magnet:
-                    cms_submit_failed = True
-                logger.warn(
-                    f"【TG115】订阅 [{subscribe.name}] 候选 [{candidate.title}] "
-                    f"{action}失败，继续尝试后续候选: {msg}"
+            def transfer_share(candidate):
+                ok, message, _data = (
+                    self._transfer.transfer(candidate.page_url or "", self._p115_target)
+                    if self._transfer
+                    else (False, "转存模块未初始化", {})
                 )
-                if recognition_attempts >= 3:
-                    break
+                return ok, message
+
+            execution = execute_auto_candidates(
+                candidates=auto_candidates,
+                confirm_identity=confirm,
+                submit_magnet=lambda candidate: self._submit_magnet_to_115(
+                    candidate, subscribe=subscribe
+                ),
+                transfer_share=transfer_share,
+            )
+            for error in execution.errors:
+                logger.warn(f"【TG115】订阅 [{subscribe.name}] 候选处理失败，继续回退: {error}")
+            best = execution.candidate
             if not best:
                 logger.warn(
                     f"【TG115】订阅 [{subscribe.name}] 已检查 {len(auto_candidates)} 条自动候选，"
-                    f"其中 {recognition_attempts} 条进入 MoviePilot 识别，"
+                    f"其中 {execution.recognition_attempts} 条进入 MoviePilot 识别，"
                     "没有候选成功提交，回退到默认搜索"
                 )
-                reason = transfer_errors[-1] if transfer_errors \
+                reason = execution.errors[-1] if execution.errors \
                     else "候选未通过 MoviePilot/TMDB 身份确认"
                 self._send_fail_notify(subscribe, reason)
                 return
@@ -666,8 +719,8 @@ class TgSearch115(_PluginBase):
             logger.info(f"【TG115】订阅 [{subscribe.name}] 命中: {best.title} -> {share_url}")
 
             self._finish_subscribe(
-                subscribe, meta, mediainfo, best, transfer_msg,
-                via_cms_magnet=via_cms_magnet,
+                subscribe, meta, mediainfo, best, execution.message,
+                via_cms_magnet=execution.via_magnet,
             )
         except Exception as e:
             logger.error(f"【TG115】处理订阅 {subscribe_id} 异常，回退到默认搜索: {e}")
@@ -676,6 +729,99 @@ class TgSearch115(_PluginBase):
                 self._running_ids.discard(subscribe_id)
 
     # ============================ 辅助方法 ============================
+    def _search_auto_sources(self, keyword: str, year: Optional[int]) -> List[Any]:
+        """Search enabled sources with per-source TTL caching and circuit breaking."""
+        hits: List[Any] = []
+        source_calls = []
+        if self._scraper:
+            source_calls.append(("tg", lambda: self._scraper.search(keyword), self._scraper))
+        if self._site_scraper:
+            source_calls.append((
+                "site", lambda: self._site_scraper.search(keyword, year=year)[0],
+                self._site_scraper,
+            ))
+        if self._juying_api:
+            source_calls.append((
+                "juying", lambda: self._juying_api.search(keyword, year=year),
+                self._juying_api,
+            ))
+
+        for source, callback, client in source_calls:
+            cache_key = (source, str(keyword).strip().casefold(), str(year or ""))
+            cached = self._search_cache.get(cache_key) if self._search_cache else None
+            if cached is not None:
+                hits.extend(cached)
+                logger.info(f"【TG115】{source} 命中周期搜索缓存 {len(cached)} 条")
+                continue
+            allowed, remaining = self._source_breaker.allow(source) \
+                if self._source_breaker else (True, 0)
+            if not allowed:
+                logger.warn(f"【TG115】{source} 来源熔断中，剩余 {remaining} 秒，本轮跳过")
+                continue
+            try:
+                source_hits = callback() or []
+                status = getattr(client, "last_error_status", None)
+                if status in (403, 429):
+                    opened = self._source_breaker.failure(source, f"HTTP {status}") \
+                        if self._source_breaker else False
+                    if opened:
+                        logger.warn(f"【TG115】{source} 连续失败达到阈值，已进入冷却")
+                elif self._source_breaker:
+                    self._source_breaker.success(source)
+                if self._search_cache and status not in (403, 429):
+                    self._search_cache.set(cache_key, source_hits)
+                hits.extend(source_hits)
+            except Exception as exc:
+                opened = self._source_breaker.failure(source, str(exc)) \
+                    if self._source_breaker else False
+                logger.warn(
+                    f"【TG115】{source} 搜索异常，本轮跳过"
+                    f"{'并进入冷却' if opened else ''}: {exc}"
+                )
+        return hits
+
+    def _save_cms_tasks(self):
+        if not self._cms_tasks:
+            return
+        try:
+            self.save_data(CMS_TASKS_KEY, self._cms_tasks.dump_records())
+        except Exception as exc:
+            logger.warn(f"【TG115】保存 CMS 任务账本失败: {exc}")
+
+    def _reconcile_cms_tasks(self):
+        if not self._cms_tasks:
+            return
+        oper = SubscribeOper()
+
+        def subscription_exists(sid: int) -> bool:
+            return bool(oper.get(sid))
+
+        def history_exists(record: Dict[str, Any]) -> bool:
+            return bool(oper.exist_history(
+                tmdbid=record.get("tmdb_id"),
+                doubanid=record.get("douban_id"),
+                season=record.get("season"),
+            ))
+
+        def restore_subscription(sid: int):
+            subscribe = oper.get(sid)
+            if subscribe and str(getattr(subscribe, "state", "") or "").upper() == "P":
+                oper.update(sid, {"state": "N"})
+                logger.warn(f"【TG115】CMS 任务超时，订阅 {sid} 已恢复为 state=N")
+
+        result = self._cms_tasks.reconcile(
+            timeout_hours=self._cms_timeout_hours,
+            subscription_exists=subscription_exists,
+            history_exists=history_exists,
+            restore_subscription=restore_subscription,
+        )
+        if result["completed"] or result["failed"] or result["timed_out"]:
+            self._save_cms_tasks()
+            logger.info(
+                f"【TG115】CMS 任务对账：完成 {result['completed']}，"
+                f"异常 {result['failed']}，超时 {result['timed_out']}"
+            )
+
     def _recognize(self, subscribe, meta) -> Optional[MediaInfo]:
         try:
             mediainfo = SubscribeChain().recognize_media(
@@ -744,14 +890,39 @@ class TgSearch115(_PluginBase):
             torrents.append(torrent)
         return torrents
 
-    def _submit_magnet_to_115(self, torrent: TorrentInfo) -> Tuple[bool, str]:
+    def _submit_magnet_to_115(self, torrent: TorrentInfo, subscribe=None) -> Tuple[bool, str]:
         """Submit a confirmed magnet to the configured CMS-backed 115 account."""
         magnet = str(torrent.enclosure or torrent.page_url or "").strip()
         if not is_magnet_url(magnet):
             return False, "磁力链接无效"
+        if not btih_from_magnet(magnet):
+            return False, "磁力链接缺少有效 BTIH"
         if not self._cms_client:
             return False, "CMS 115 离线模块未初始化"
-        return self._cms_client.add_magnet(magnet)
+        btih = btih_from_magnet(magnet)
+        record = None
+        if self._cms_tasks and btih:
+            record, created = self._cms_tasks.reserve(
+                magnet=magnet,
+                title=torrent.title or "未命名资源",
+                subscribe=subscribe,
+                status="waiting",
+            )
+            if not created:
+                same_subscription = bool(
+                    subscribe and record.get("subscribe_id") == getattr(subscribe, "id", None)
+                )
+                if same_subscription:
+                    return True, "相同 BTIH 的 CMS 任务已存在，已跳过重复提交"
+                return False, "相同 BTIH 已由其它任务处理，本订阅继续尝试后续候选"
+        ok, message = self._cms_client.add_magnet(magnet)
+        if self._cms_tasks and record:
+            self._cms_tasks.update(
+                record["btih"], "downloading" if ok else "failed",
+                "" if ok else message,
+            )
+            self._save_cms_tasks()
+        return ok, message
 
     def _filter_resources(self, subscribe, mediainfo, torrents: List[TorrentInfo]) -> List[TorrentInfo]:
         """复用 MP 内置过滤规则：先规则组，再 include/exclude/清晰度等参数。"""
@@ -1296,12 +1467,33 @@ class TgSearch115(_PluginBase):
             return JSONResponse(
                 {"success": False, "message": "磁力链接无效"}, status_code=400
             )
+        if not btih_from_magnet(magnet):
+            return JSONResponse(
+                {"success": False, "message": "磁力链接缺少有效 BTIH"}, status_code=400
+            )
         if not self._cms_client:
             return JSONResponse(
                 {"success": False, "message": "CMS 115 离线模块未初始化"},
                 status_code=400,
             )
+        btih = btih_from_magnet(magnet)
+        record = None
+        if self._cms_tasks and btih:
+            record, created = self._cms_tasks.reserve(
+                magnet=magnet, title=title, status="waiting"
+            )
+            if not created:
+                return JSONResponse({
+                    "success": True,
+                    "message": "相同 BTIH 的 CMS 任务已存在，未重复提交",
+                })
         ok, message = self._cms_client.add_magnet(magnet)
+        if self._cms_tasks and record:
+            self._cms_tasks.update(
+                record["btih"], "downloading" if ok else "failed",
+                "" if ok else message,
+            )
+            self._save_cms_tasks()
         logger.info(f"【TG115】手动提交 CMS 115 磁力任务 [{title}]: ok={ok}")
         return JSONResponse({"success": ok, "message": message})
 
@@ -1316,6 +1508,46 @@ class TgSearch115(_PluginBase):
         ok, message = client.check()
         return JSONResponse({"success": ok, "message": message})
 
+    def __runtime_status_api(self):
+        """GET /runtime/status: return non-secret scheduler and CMS task state."""
+        from starlette.responses import JSONResponse
+        self._reconcile_cms_tasks()
+        scheduler = self._coordinator.status() if self._coordinator else {
+            "running": False, "last_run": "", "next_run": "",
+            "scanned_count": 0, "queue_size": 0, "running_subscribe_id": None,
+        }
+        return JSONResponse({
+            "success": True,
+            "scheduler": scheduler,
+            "sources": self._source_breaker.snapshot() if self._source_breaker else {},
+            "tasks": self._cms_tasks.public_records() if self._cms_tasks else [],
+        })
+
+    def __retry_cms_task_api(self, payload: dict = Body(default=None)):
+        """POST /tasks/retry: resubmit a recorded terminal CMS task by BTIH."""
+        from starlette.responses import JSONResponse
+        payload = payload if isinstance(payload, dict) else {}
+        btih = str(payload.get("btih") or "").strip().lower()
+        record = self._cms_tasks.latest(btih) if self._cms_tasks else None
+        if not record:
+            return JSONResponse({"success": False, "message": "未找到 CMS 任务"}, status_code=404)
+        if record.get("status") in ("waiting", "downloading", "pending_organize"):
+            return JSONResponse({"success": False, "message": "任务仍在处理中，无需重试"}, status_code=409)
+        magnet = str(record.get("magnet") or "")
+        if not self._cms_client or not is_magnet_url(magnet):
+            return JSONResponse({"success": False, "message": "CMS 未配置或任务磁力无效"}, status_code=400)
+        ok, message = self._cms_client.add_magnet(magnet)
+        if ok:
+            self._cms_tasks.restart(btih)
+            sid = record.get("subscribe_id")
+            if sid and SubscribeOper().get(int(sid)):
+                SubscribeOper().update(int(sid), {"state": "P"})
+        else:
+            self._cms_tasks.update(btih, "failed", message)
+        self._save_cms_tasks()
+        logger.info(f"【TG115】重试 CMS 任务 btih={btih[:12]}... ok={ok}")
+        return JSONResponse({"success": ok, "message": message})
+
     def __search_api(self, keyword: str = "", offset: int = 0, source: str = "all"):
         """GET /search?keyword=...&offset=N&source=all|tg|site：手动搜索。
 
@@ -1326,7 +1558,6 @@ class TgSearch115(_PluginBase):
         返回 has_more 标记是否还有更多观影作品可翻页；warning 携带 app_auth 失效等提示。
         """
         from starlette.responses import JSONResponse
-        import concurrent.futures
         keyword = (keyword or "").strip()
         if not keyword:
             return JSONResponse({"success": False, "message": "请输入搜索关键字"}, status_code=400)
@@ -1344,24 +1575,47 @@ class TgSearch115(_PluginBase):
         search_kw = _re.sub(r'\s*[(（]\d{4}[)）]', '', keyword).strip() or keyword
 
         src = (source or "all").lower()
+        cooled_sources = []
+
+        def _allowed(source_name: str) -> bool:
+            allowed, remaining = self._source_breaker.allow(source_name) \
+                if self._source_breaker else (True, 0)
+            if not allowed:
+                cooled_sources.append(f"{source_name} 冷却中（{remaining}秒）")
+            return allowed
+
+        def _record_source(source_name: str, client):
+            if not self._source_breaker:
+                return
+            status = getattr(client, "last_error_status", None)
+            if status in (403, 429):
+                self._source_breaker.failure(source_name, f"HTTP {status}")
+            else:
+                self._source_breaker.success(source_name)
 
         def _do_search():
             hits = []
             has_more = False
             # TG 仅首批搜索一次（已抓全 max_pages 页）；翻页(offset>0)只追加观影作品
-            if src in ("all", "tg") and self._scraper and offset == 0:
+            if (src in ("all", "tg") and self._scraper and offset == 0
+                    and _allowed("tg")):
                 hits.extend(self._scraper.search(search_kw))
-            if src in ("all", "site") and self._site_scraper:
+                _record_source("tg", self._scraper)
+            if src in ("all", "site") and self._site_scraper and _allowed("site"):
                 site_hits, has_more = self._site_scraper.search(
                     search_kw, year=manual_year, offset=offset, count=3)
                 hits.extend(site_hits)
-            if src in ("all", "juying") and self._juying_api:
+                _record_source("site", self._site_scraper)
+            if src in ("all", "juying") and self._juying_api and _allowed("juying"):
                 hits.extend(self._juying_api.search(search_kw, year=manual_year))
+                _record_source("juying", self._juying_api)
             return hits, has_more
 
         try:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-                hits, has_more = ex.submit(_do_search).result(timeout=180)
+            if self._coordinator:
+                hits, has_more = self._coordinator.submit_manual(_do_search, timeout=240)
+            else:
+                hits, has_more = _do_search()
             results = []
             seen_results = set()
             for h in hits:
@@ -1419,6 +1673,8 @@ class TgSearch115(_PluginBase):
                 warning = f"观影详情获取失败：{self._site_scraper.last_detail_error}"
             elif self._juying_api and not getattr(self._juying_api, "app_auth_valid", True):
                 warning = "聚影 AppID/API Key 无效(401)，请在「聚影」Tab 检查凭证"
+            if cooled_sources:
+                warning = "；".join(cooled_sources + ([warning] if warning else []))
             return JSONResponse({
                 "success": True,
                 "message": f"找到 {len(results)} 条资源",
@@ -1426,7 +1682,7 @@ class TgSearch115(_PluginBase):
                 "has_more": has_more,
                 "warning": warning,
             })
-        except concurrent.futures.TimeoutError:
+        except TimeoutError:
             return JSONResponse({"success": False, "message": "搜索超时（连接或检索过久）"}, status_code=504)
         except Exception as e:
             logger.error(f"【TG115】手动搜索异常: {e}")
@@ -1576,6 +1832,20 @@ class TgSearch115(_PluginBase):
             "notify_success": True,
             "notify_fail": False,
             "auto_finish": True,
+            "periodic_enabled": True,
+            "period_hours": 2,
+            "jitter_minutes": 10,
+            "source_item_delay_min": 5,
+            "source_item_delay_max": 10,
+            "search_cache_hours": 2,
+            "source_failure_threshold": 3,
+            "source_cooldown_minutes": 60,
+            "tg_concurrency": 2,
+            "tg_page_delay_min": 0.8,
+            "tg_page_delay_max": 1.5,
+            "site_detail_delay_min": 1.5,
+            "site_detail_delay_max": 3,
+            "cms_timeout_hours": 12,
             "site_enabled": False,
             "site_app_auth": "",
             "site_magnet_priority": True,
@@ -1639,6 +1909,13 @@ class TgSearch115(_PluginBase):
     def _safe_int(v: Any, default: int = 0) -> int:
         try:
             return int(v)
+        except Exception:
+            return default
+
+    @staticmethod
+    def _safe_float(v: Any, default: float = 0.0) -> float:
+        try:
+            return float(v)
         except Exception:
             return default
 
