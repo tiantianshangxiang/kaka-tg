@@ -195,11 +195,11 @@ class TgSearch115(_PluginBase):
     # ============================ 插件元信息 ============================
     plugin_name = "拦截mp订阅"
     plugin_desc = (
-        "新增订阅和周期任务搜索 Telegram、观影和聚影，确认匹配的观影磁力通过 CMS 离线到 115，"
+        "新增订阅和周期任务搜索 Telegram、观影和聚影，确认匹配的中字 1080P/4K 观影磁力优先通过插件内置 115 离线，"
         "并支持 115 分享直接转存；"
         "未命中或转存失败则平滑回退到 MoviePilot 默认站点搜索。"
     )
-    plugin_version = "4.7.3"
+    plugin_version = "4.7.4"
     plugin_author = "MoviePilot User"
     plugin_icon = "T"
     plugin_config_prefix = "plugin.tgsearch115"
@@ -1605,6 +1605,21 @@ class TgSearch115(_PluginBase):
             return JSONResponse({"success": False, "message": f"转存失败: {e}"}, status_code=500)
 
     def __magnet_offline_api(self, payload: dict = Body(default=None)):
+        """Always return JSON, including unexpected direct/CMS client errors."""
+        from starlette.responses import JSONResponse
+        try:
+            return self.__magnet_offline_api_impl(payload)
+        except Exception as exc:
+            logger.error(
+                "【TG115】手动磁力离线异常 type=%s",
+                type(exc).__name__,
+            )
+            return JSONResponse(
+                {"success": False, "message": "离线请求处理失败，请检查插件日志"},
+                status_code=500,
+            )
+
+    def __magnet_offline_api_impl(self, payload: dict = Body(default=None)):
         """POST /magnet/offline：用户手动确认后提交 CMS/115 磁力离线任务。"""
         from starlette.responses import JSONResponse
         payload = payload if isinstance(payload, dict) else {}
@@ -1632,6 +1647,8 @@ class TgSearch115(_PluginBase):
                     "message": "相同 BTIH 的 CMS 任务已存在，未重复提交",
                 })
         ok, message = False, "未提交"
+        direct: Dict[str, Any] = {}
+        target_cid = ""
         if self._magnet_download_mode in {"direct_115", "direct_then_cms"} and self._offline_client:
             try:
                 target_cid = self._resolve_offline_target_cid()
@@ -1653,7 +1670,7 @@ class TgSearch115(_PluginBase):
                 "" if ok else message,
             )
             self._save_cms_tasks()
-        logger.info(f"【TG115】手动提交 CMS 115 磁力任务 [{title}]: ok={ok}")
+        logger.info(f"【TG115】手动提交 115 磁力任务 [{title}]: ok={ok}")
         return JSONResponse({"success": ok, "message": message})
 
     def __check_cms_api(self, payload: dict = Body(default=None)):

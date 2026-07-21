@@ -1,5 +1,5 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { _ as _export_sfc, f as filterSearchResults, R as RESOURCE_FILTERS, Q as QUALITY_FILTERS } from './_plugin-vue_export-helper-BKBpQ8ln.js';
+import { _ as _export_sfc, f as filterSearchResults, M as ManualSearch } from './ManualSearch-CwqCAbd1.js';
 
 const {resolveComponent:_resolveComponent,createVNode:_createVNode,createElementVNode:_createElementVNode,toDisplayString:_toDisplayString,createTextVNode:_createTextVNode,withCtx:_withCtx,openBlock:_openBlock,createBlock:_createBlock,createCommentVNode:_createCommentVNode,createElementBlock:_createElementBlock,withKeys:_withKeys,unref:_unref,renderList:_renderList,Fragment:_Fragment,normalizeClass:_normalizeClass,withModifiers:_withModifiers} = await importShared('vue');
 
@@ -10,65 +10,33 @@ const _hoisted_2 = {
   class: "text-caption text-success mb-2"
 };
 const _hoisted_3 = { class: "d-flex ga-2 mb-3" };
-const _hoisted_4 = { class: "d-flex align-center ga-2 mb-3" };
-const _hoisted_5 = { class: "d-flex ga-2 mb-3" };
-const _hoisted_6 = { class: "filter-row mb-2" };
-const _hoisted_7 = { class: "filter-row mb-3" };
-const _hoisted_8 = {
-  key: 0,
-  class: "empty-state"
-};
-const _hoisted_9 = {
-  key: 1,
-  class: "channel-list"
-};
-const _hoisted_10 = { class: "px-3 pt-2 pb-1" };
-const _hoisted_11 = { class: "d-flex align-start" };
-const _hoisted_12 = { class: "channel-meta flex-grow-1" };
-const _hoisted_13 = { class: "d-flex align-center flex-wrap ga-1" };
-const _hoisted_14 = { class: "text-body-2 font-weight-medium" };
-const _hoisted_15 = {
-  class: "text-caption text-medium-emphasis mt-1",
-  style: {"white-space":"pre-wrap","max-height":"4.5em","overflow":"hidden"}
-};
-const _hoisted_16 = { class: "text-caption text-medium-emphasis mt-1" };
-const _hoisted_17 = { key: 0 };
-const _hoisted_18 = { class: "d-flex flex-column align-end ml-2 mt-1" };
-const _hoisted_19 = {
-  key: 2,
-  class: "text-center mt-3 mb-2"
-};
-const _hoisted_20 = {
-  key: 3,
-  class: "empty-state"
-};
-const _hoisted_21 = { class: "d-flex align-center mb-2 flex-wrap ga-2" };
-const _hoisted_22 = {
+const _hoisted_22 = { class: "d-flex align-center mb-2 flex-wrap ga-2" };
+const _hoisted_23 = {
   key: 0,
   class: "channel-list"
 };
-const _hoisted_23 = { class: "d-flex align-center px-3 py-2" };
-const _hoisted_24 = { class: "channel-meta" };
-const _hoisted_25 = { class: "text-body-2 font-weight-medium text-truncate" };
-const _hoisted_26 = { class: "text-caption text-medium-emphasis text-truncate" };
-const _hoisted_27 = {
-  key: 1,
-  class: "empty-state"
-};
+const _hoisted_24 = { class: "d-flex align-center px-3 py-2" };
+const _hoisted_25 = { class: "channel-meta" };
+const _hoisted_26 = { class: "text-body-2 font-weight-medium text-truncate" };
+const _hoisted_27 = { class: "text-caption text-medium-emphasis text-truncate" };
 const _hoisted_28 = {
+  key: 1,
+  class: "empty-state"
+};
+const _hoisted_29 = {
   key: 0,
   class: "d-flex justify-center mb-3"
 };
-const _hoisted_29 = ["src"];
-const _hoisted_30 = { class: "d-flex align-center justify-center" };
-const _hoisted_31 = { class: "text-body-2 text-medium-emphasis" };
-const _hoisted_32 = { class: "d-flex align-center px-2 py-1 flex-wrap" };
-const _hoisted_33 = { class: "text-caption" };
-const _hoisted_34 = {
+const _hoisted_30 = ["src"];
+const _hoisted_31 = { class: "d-flex align-center justify-center" };
+const _hoisted_32 = { class: "text-body-2 text-medium-emphasis" };
+const _hoisted_33 = { class: "d-flex align-center px-2 py-1 flex-wrap" };
+const _hoisted_34 = { class: "text-caption" };
+const _hoisted_35 = {
   key: 2,
   class: "empty-state"
 };
-const _hoisted_35 = {
+const _hoisted_36 = {
   class: "text-caption text-medium-emphasis text-truncate",
   style: {"max-width":"60%"}
 };
@@ -146,8 +114,8 @@ const periodOptions = [
   { title: '每 3 小时', value: 3 },
 ];
 const magnetModeOptions = [
-  { title: '115 直连（失败即回退）', value: 'direct_115' },
-  { title: '115 直连后回退 CMS', value: 'direct_then_cms' },
+  { title: '插件内置 115 优先，失败回退 CMS（默认）', value: 'direct_then_cms' },
+  { title: '仅插件内置 115，不回退', value: 'direct_115' },
   { title: '仅 CMS', value: 'cms_only' },
 ];
 const tgConcurrencyOptions = [
@@ -198,19 +166,19 @@ const transferTarget = ref('');
 const transferLoading = ref(false);
 const transferResult = ref(null);
 const searchKeyword = ref('');
-const searchSource = ref('all');
+ref('all');
 const resourceFilter = ref('all');
 const qualityFilter = ref('all');
-const searchLoading = ref(false);
+ref(false);
 const searchResults = ref([]);
-const filteredSearchResults = computed(() => filterSearchResults(
+computed(() => filterSearchResults(
   searchResults.value,
   resourceFilter.value,
   qualityFilter.value,
 ));
 const searched = ref(false);
-const displayLimit = ref(3);
-const transferringIndex = ref(-1);  // 正在转存的结果索引（-1=无）
+ref(3);
+ref(-1);  // 正在转存的结果索引（-1=无）
 // 观影连通检查
 const siteChecking = ref(false);
 const cmsChecking = ref(false);
@@ -447,32 +415,6 @@ async function doTransfer() {
     transferResult.value = { success: false, message: '转存请求失败' };
   }
 }
-async function transferFromSearch(result, index) {
-  transferringIndex.value = index;
-  if (result?.pan_type === 'magnet') {
-    const res = await apiPost('/magnet/offline', {
-      magnet: result.share_url,
-      title: result.display_name || result.title || '',
-    });
-    snack(res.message || (res.success ? '已创建 115 离线任务' : '提交失败'), res.success ? 'success' : 'error');
-  } else {
-    transferUrl.value = result?.share_url || '';
-    await doTransfer();
-  }
-  transferringIndex.value = -1;
-}
-// 网盘类型展示
-function panColor(pt) {
-  return { '115': 'success', quark: 'info', baidu: 'error', aliyun: 'warning', xunlei: 'secondary', cloud189: 'primary', uc: 'accent', magnet: 'deep-purple' }[pt] || 'grey'
-}
-function panLabel(pt) {
-  return { '115': '115', quark: '夸克', baidu: '百度', aliyun: '阿里', xunlei: '迅雷', cloud189: '天翼', uc: 'UC', magnet: '磁力', other: '其他' }[pt] || pt
-}
-function copyLink(r) {
-  const text = r.share_url + (r.receive_code ? `\n提取码: ${r.receive_code}` : '');
-  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text);
-  snack('已复制链接' + (r.receive_code ? '与提取码' : ''));
-}
 async function checkSite() {
   const auth = (config.site_app_auth || '').trim();
   if (!auth) { snack('请先填 app_auth', 'warning'); return }
@@ -516,26 +458,6 @@ async function checkJuying() {
   const res = await apiGet(`/check_juying?app_id=${encodeURIComponent(aid)}&api_key=${encodeURIComponent(akey)}${dom ? '&domain=' + dom : ''}`);
   juyingChecking.value = false;
   snack((res && res.message) || '检查失败', (res && res.success) ? 'success' : 'error');
-}
-async function doSearch() {
-  const kw = (searchKeyword.value || '').trim();
-  if (!kw) { snack('请输入搜索关键字', 'warning'); return }
-  searchLoading.value = true;
-  searched.value = true;
-  searchResults.value = [];
-  const res = await apiGet(`/search?keyword=${encodeURIComponent(kw)}&source=${searchSource.value}`);
-  searchLoading.value = false;
-  if (res && res.success) {
-    searchResults.value = res.results || [];
-    snack(res.warning || res.message || `找到 ${searchResults.value.length} 条`, res.warning ? 'warning' : 'success');
-    try { localStorage.setItem('tg115_last_search', JSON.stringify({ kw: kw, results: searchResults.value })); } catch (e) {}
-  } else {
-    snack((res && res.message) || '搜索失败', 'error');
-  }
-  displayLimit.value = 3;
-}
-function loadMoreResults() {
-  displayLimit.value += 10;
 }
 
 /* --------------------------- 115 目录查询 / 浏览 --------------------------- */
@@ -763,7 +685,7 @@ return (_ctx, _cache) => {
   const _component_v_tabs = _resolveComponent("v-tabs");
   const _component_v_alert = _resolveComponent("v-alert");
   const _component_v_window_item = _resolveComponent("v-window-item");
-  const _component_v_btn_toggle = _resolveComponent("v-btn-toggle");
+  _resolveComponent("v-btn-toggle");
   const _component_v_progress_circular = _resolveComponent("v-progress-circular");
   const _component_v_checkbox = _resolveComponent("v-checkbox");
   const _component_v_select = _resolveComponent("v-select");
@@ -1109,283 +1031,11 @@ return (_ctx, _cache) => {
             }, {
               default: _withCtx(() => [
                 _cache[95] || (_cache[95] = _createElementVNode("div", { class: "section-label mb-2" }, "手动搜索（TG 频道 + 观影）", -1)),
-                _createElementVNode("div", _hoisted_4, [
-                  _cache[84] || (_cache[84] = _createElementVNode("span", { class: "text-caption text-medium-emphasis" }, "来源", -1)),
-                  _createVNode(_component_v_btn_toggle, {
-                    modelValue: searchSource.value,
-                    "onUpdate:modelValue": _cache[9] || (_cache[9] = $event => ((searchSource).value = $event)),
-                    mandatory: "",
-                    color: "primary",
-                    density: "compact",
-                    divided: ""
-                  }, {
-                    default: _withCtx(() => [
-                      _createVNode(_component_v_btn, {
-                        value: "all",
-                        size: "small"
-                      }, {
-                        default: _withCtx(() => [...(_cache[80] || (_cache[80] = [
-                          _createTextVNode("全部", -1)
-                        ]))]),
-                        _: 1
-                      }),
-                      _createVNode(_component_v_btn, {
-                        value: "tg",
-                        size: "small"
-                      }, {
-                        default: _withCtx(() => [...(_cache[81] || (_cache[81] = [
-                          _createTextVNode("TG", -1)
-                        ]))]),
-                        _: 1
-                      }),
-                      _createVNode(_component_v_btn, {
-                        value: "site",
-                        size: "small"
-                      }, {
-                        default: _withCtx(() => [...(_cache[82] || (_cache[82] = [
-                          _createTextVNode("观影", -1)
-                        ]))]),
-                        _: 1
-                      }),
-                      _createVNode(_component_v_btn, {
-                        value: "juying",
-                        size: "small"
-                      }, {
-                        default: _withCtx(() => [...(_cache[83] || (_cache[83] = [
-                          _createTextVNode("聚影", -1)
-                        ]))]),
-                        _: 1
-                      })
-                    ]),
-                    _: 1
-                  }, 8, ["modelValue"])
-                ]),
-                _createElementVNode("div", _hoisted_5, [
-                  _createVNode(_component_v_text_field, {
-                    modelValue: searchKeyword.value,
-                    "onUpdate:modelValue": _cache[10] || (_cache[10] = $event => ((searchKeyword).value = $event)),
-                    label: "搜索关键字（影片名 + 年份）",
-                    variant: "outlined",
-                    density: "comfortable",
-                    "hide-details": "",
-                    onKeyup: _withKeys(doSearch, ["enter"])
-                  }, null, 8, ["modelValue"]),
-                  _createVNode(_component_v_btn, {
-                    color: "primary",
-                    variant: "flat",
-                    loading: searchLoading.value,
-                    "prepend-icon": "mdi-magnify",
-                    onClick: doSearch
-                  }, {
-                    default: _withCtx(() => [...(_cache[85] || (_cache[85] = [
-                      _createTextVNode("搜索", -1)
-                    ]))]),
-                    _: 1
-                  }, 8, ["loading"])
-                ]),
-                _createElementVNode("div", _hoisted_6, [
-                  _cache[86] || (_cache[86] = _createElementVNode("span", { class: "filter-label" }, "资源", -1)),
-                  _createVNode(_component_v_btn_toggle, {
-                    modelValue: resourceFilter.value,
-                    "onUpdate:modelValue": _cache[11] || (_cache[11] = $event => ((resourceFilter).value = $event)),
-                    mandatory: "",
-                    color: "primary",
-                    density: "compact",
-                    divided: "",
-                    class: "filter-toggle"
-                  }, {
-                    default: _withCtx(() => [
-                      (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(_unref(RESOURCE_FILTERS), (item) => {
-                        return (_openBlock(), _createBlock(_component_v_btn, {
-                          key: item.value,
-                          value: item.value,
-                          size: "small"
-                        }, {
-                          default: _withCtx(() => [
-                            _createTextVNode(_toDisplayString(item.title), 1)
-                          ]),
-                          _: 2
-                        }, 1032, ["value"]))
-                      }), 128))
-                    ]),
-                    _: 1
-                  }, 8, ["modelValue"])
-                ]),
-                _createElementVNode("div", _hoisted_7, [
-                  _cache[87] || (_cache[87] = _createElementVNode("span", { class: "filter-label" }, "画质", -1)),
-                  _createVNode(_component_v_btn_toggle, {
-                    modelValue: qualityFilter.value,
-                    "onUpdate:modelValue": _cache[12] || (_cache[12] = $event => ((qualityFilter).value = $event)),
-                    mandatory: "",
-                    color: "primary",
-                    density: "compact",
-                    divided: "",
-                    class: "filter-toggle"
-                  }, {
-                    default: _withCtx(() => [
-                      (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(_unref(QUALITY_FILTERS), (item) => {
-                        return (_openBlock(), _createBlock(_component_v_btn, {
-                          key: item.value,
-                          value: item.value,
-                          size: "small"
-                        }, {
-                          default: _withCtx(() => [
-                            _createTextVNode(_toDisplayString(item.title), 1)
-                          ]),
-                          _: 2
-                        }, 1032, ["value"]))
-                      }), 128))
-                    ]),
-                    _: 1
-                  }, 8, ["modelValue"]),
-                  (searchResults.value.length)
-                    ? (_openBlock(), _createBlock(_component_v_chip, {
-                        key: 0,
-                        size: "x-small",
-                        variant: "tonal",
-                        color: "primary"
-                      }, {
-                        default: _withCtx(() => [
-                          _createTextVNode(_toDisplayString(filteredSearchResults.value.length) + "/" + _toDisplayString(searchResults.value.length) + " 条 ", 1)
-                        ]),
-                        _: 1
-                      }))
-                    : _createCommentVNode("", true)
-                ]),
-                (searchLoading.value)
-                  ? (_openBlock(), _createElementBlock("div", _hoisted_8, [
-                      _createVNode(_component_v_progress_circular, {
-                        indeterminate: "",
-                        size: "40",
-                        width: "3",
-                        color: "primary",
-                        class: "mb-3"
-                      }),
-                      _cache[88] || (_cache[88] = _createElementVNode("div", { class: "text-body-2" }, "正在搜索...", -1))
-                    ]))
-                  : (filteredSearchResults.value.length)
-                    ? (_openBlock(), _createElementBlock("div", _hoisted_9, [
-                        (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(filteredSearchResults.value.slice(0, displayLimit.value), (r, i) => {
-                          return (_openBlock(), _createBlock(_component_v_card, {
-                            key: r.share_url || i,
-                            variant: "outlined",
-                            rounded: "lg",
-                            class: "channel-item mb-2"
-                          }, {
-                            default: _withCtx(() => [
-                              _createElementVNode("div", _hoisted_10, [
-                                _createElementVNode("div", _hoisted_11, [
-                                  _createVNode(_component_v_icon, {
-                                    icon: "mdi-file-video-outline",
-                                    color: r.pan_type === '115' ? 'success' : 'primary',
-                                    class: "mr-3 mt-1"
-                                  }, null, 8, ["color"]),
-                                  _createElementVNode("div", _hoisted_12, [
-                                    _createElementVNode("div", _hoisted_13, [
-                                      _createElementVNode("span", _hoisted_14, _toDisplayString(r.display_name || r.title), 1),
-                                      _createVNode(_component_v_chip, {
-                                        size: "x-small",
-                                        color: panColor(r.pan_type),
-                                        variant: "tonal",
-                                        label: ""
-                                      }, {
-                                        default: _withCtx(() => [
-                                          _createTextVNode(_toDisplayString(panLabel(r.pan_type)), 1)
-                                        ]),
-                                        _: 2
-                                      }, 1032, ["color"])
-                                    ]),
-                                    _createElementVNode("div", _hoisted_15, _toDisplayString(r.text || r.title), 1),
-                                    _createElementVNode("div", _hoisted_16, [
-                                      _createTextVNode(_toDisplayString(r.channel), 1),
-                                      (r.pub_date)
-                                        ? (_openBlock(), _createElementBlock("span", _hoisted_17, " · " + _toDisplayString(r.pub_date), 1))
-                                        : _createCommentVNode("", true)
-                                    ])
-                                  ]),
-                                  _createElementVNode("div", _hoisted_18, [
-                                    (r.pan_type === '115')
-                                      ? (_openBlock(), _createBlock(_component_v_btn, {
-                                          key: 0,
-                                          color: "success",
-                                          variant: "tonal",
-                                          size: "small",
-                                          "prepend-icon": "mdi-cloud-download",
-                                          loading: transferringIndex.value === i,
-                                          onClick: $event => (transferFromSearch(r, i))
-                                        }, {
-                                          default: _withCtx(() => [...(_cache[89] || (_cache[89] = [
-                                            _createTextVNode("转存", -1)
-                                          ]))]),
-                                          _: 1
-                                        }, 8, ["loading", "onClick"]))
-                                      : (r.pan_type === 'magnet')
-                                        ? (_openBlock(), _createBlock(_component_v_btn, {
-                                            key: 1,
-                                            color: "deep-purple",
-                                            variant: "tonal",
-                                            size: "small",
-                                            "prepend-icon": "mdi-magnet-on",
-                                            loading: transferringIndex.value === i,
-                                            onClick: $event => (transferFromSearch(r, i))
-                                          }, {
-                                            default: _withCtx(() => [...(_cache[90] || (_cache[90] = [
-                                              _createTextVNode("离线到115", -1)
-                                            ]))]),
-                                            _: 1
-                                          }, 8, ["loading", "onClick"]))
-                                        : (_openBlock(), _createBlock(_component_v_btn, {
-                                            key: 2,
-                                            variant: "text",
-                                            size: "small",
-                                            "prepend-icon": "mdi-content-copy",
-                                            onClick: $event => (copyLink(r))
-                                          }, {
-                                            default: _withCtx(() => [...(_cache[91] || (_cache[91] = [
-                                              _createTextVNode("复制链接", -1)
-                                            ]))]),
-                                            _: 1
-                                          }, 8, ["onClick"]))
-                                  ])
-                                ])
-                              ])
-                            ]),
-                            _: 2
-                          }, 1024))
-                        }), 128))
-                      ]))
-                    : _createCommentVNode("", true),
-                (filteredSearchResults.value.length > displayLimit.value)
-                  ? (_openBlock(), _createElementBlock("div", _hoisted_19, [
-                      _createVNode(_component_v_btn, {
-                        variant: "text",
-                        color: "primary",
-                        size: "small",
-                        onClick: loadMoreResults
-                      }, {
-                        default: _withCtx(() => [
-                          _cache[92] || (_cache[92] = _createTextVNode(" 加载更多 ", -1)),
-                          _createVNode(_component_v_icon, {
-                            icon: "mdi-chevron-right",
-                            size: "small",
-                            class: "ml-1",
-                            style: {"transform":"rotate(90deg)"}
-                          })
-                        ]),
-                        _: 1
-                      })
-                    ]))
-                  : (searched.value && !searchLoading.value)
-                    ? (_openBlock(), _createElementBlock("div", _hoisted_20, [
-                        _createVNode(_component_v_icon, {
-                          icon: "mdi-magnify-close",
-                          size: "48",
-                          class: "mb-2"
-                        }),
-                        _cache[93] || (_cache[93] = _createElementVNode("div", { class: "text-body-2" }, "未找到资源", -1)),
-                        _cache[94] || (_cache[94] = _createElementVNode("div", { class: "text-caption text-medium-emphasis mt-1" }, "提示：TG 用片名搜全历史；观影需在「插件设置」配置 app_auth", -1))
-                      ]))
-                    : _createCommentVNode("", true)
+                _createVNode(ManualSearch, {
+                  "plugin-id": props.pluginId,
+                  api: props.api
+                }, null, 8, ["plugin-id", "api"]),
+                _createCommentVNode("", true)
               ]),
               _: 1
             }),
@@ -1468,7 +1118,7 @@ return (_ctx, _cache) => {
                   ]),
                   _: 1
                 }),
-                _createElementVNode("div", _hoisted_21, [
+                _createElementVNode("div", _hoisted_22, [
                   _cache[100] || (_cache[100] = _createElementVNode("span", { class: "section-label" }, "已添加频道", -1)),
                   _createVNode(_component_v_chip, {
                     size: "small",
@@ -1542,7 +1192,7 @@ return (_ctx, _cache) => {
                       ], 64))
                 ]),
                 (channels.value.length)
-                  ? (_openBlock(), _createElementBlock("div", _hoisted_22, [
+                  ? (_openBlock(), _createElementBlock("div", _hoisted_23, [
                       (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(channels.value, (ch, i) => {
                         return (_openBlock(), _createBlock(_component_v_card, {
                           key: ch.uid || i,
@@ -1551,7 +1201,7 @@ return (_ctx, _cache) => {
                           class: _normalizeClass(["channel-item", { 'channel-selected': selectedChannels.value.includes(i) }])
                         }, {
                           default: _withCtx(() => [
-                            _createElementVNode("div", _hoisted_23, [
+                            _createElementVNode("div", _hoisted_24, [
                               (channelSelectMode.value)
                                 ? (_openBlock(), _createBlock(_component_v_checkbox, {
                                     key: 0,
@@ -1567,9 +1217,9 @@ return (_ctx, _cache) => {
                                 color: "primary",
                                 class: "mr-3"
                               }),
-                              _createElementVNode("div", _hoisted_24, [
-                                _createElementVNode("div", _hoisted_25, _toDisplayString(ch.name), 1),
-                                _createElementVNode("div", _hoisted_26, _toDisplayString(ch.id), 1)
+                              _createElementVNode("div", _hoisted_25, [
+                                _createElementVNode("div", _hoisted_26, _toDisplayString(ch.name), 1),
+                                _createElementVNode("div", _hoisted_27, _toDisplayString(ch.id), 1)
                               ]),
                               (!channelSelectMode.value)
                                 ? (_openBlock(), _createBlock(_component_v_btn, {
@@ -1601,7 +1251,7 @@ return (_ctx, _cache) => {
                         }, 1032, ["class"]))
                       }), 128))
                     ]))
-                  : (_openBlock(), _createElementBlock("div", _hoisted_27, [
+                  : (_openBlock(), _createElementBlock("div", _hoisted_28, [
                       _createVNode(_component_v_icon, {
                         icon: "mdi-account-group-off-outline",
                         size: "48",
@@ -1927,7 +1577,7 @@ return (_ctx, _cache) => {
             }, {
               default: _withCtx(() => [
                 _cache[116] || (_cache[116] = _createElementVNode("div", { class: "section-label mb-2" }, "观影站点", -1)),
-                _cache[117] || (_cache[117] = _createElementVNode("div", { class: "text-caption text-medium-emphasis mb-3" }, "PoW 验证 + 全网盘资源 + 磁力链接搜索；完整磁力经 MoviePilot 匹配确认后通过 CMS 离线到 115。", -1)),
+                _cache[117] || (_cache[117] = _createElementVNode("div", { class: "text-caption text-medium-emphasis mb-3" }, "PoW 验证 + 全网盘资源 + 磁力链接搜索；中字 1080P/4K 磁力经 MoviePilot 确认后优先通过插件内置 115 离线，失败才回退 CMS。", -1)),
                 _createVNode(_component_v_row, null, {
                   default: _withCtx(() => [
                     _createVNode(_component_v_col, {
@@ -1979,7 +1629,7 @@ return (_ctx, _cache) => {
                       default: _withCtx(() => [
                         _cache[111] || (_cache[111] = _createElementVNode("div", { class: "mr-3" }, [
                           _createElementVNode("div", { class: "text-subtitle-2" }, "完整磁力优先离线到 115"),
-                          _createElementVNode("div", { class: "text-caption text-medium-emphasis" }, "先用 MP 规则与媒体 ID 确认；电影或完整剧集磁力优先于 115 分享，再由 CMS 创建 115 离线任务")
+                          _createElementVNode("div", { class: "text-caption text-medium-emphasis" }, "先用 MP 规则与媒体 ID 确认；只自动处理中字 1080P/4K 磁力，插件内置 115 失败时才回退 CMS")
                         ], -1)),
                         _createVNode(_component_v_spacer),
                         _createVNode(_component_v_switch, {
@@ -2571,15 +2221,15 @@ return (_ctx, _cache) => {
                   class: "mb-3 text-left"
                 }, null, 8, ["modelValue"]),
                 (qrData.qrcode_url)
-                  ? (_openBlock(), _createElementBlock("div", _hoisted_28, [
+                  ? (_openBlock(), _createElementBlock("div", _hoisted_29, [
                       _createElementVNode("img", {
                         src: qrData.qrcode_url,
                         alt: "115 二维码",
                         style: {"max-width":"220px","width":"100%"}
-                      }, null, 8, _hoisted_29)
+                      }, null, 8, _hoisted_30)
                     ]))
                   : _createCommentVNode("", true),
-                _createElementVNode("div", _hoisted_30, [
+                _createElementVNode("div", _hoisted_31, [
                   (qrPolling.value)
                     ? (_openBlock(), _createBlock(_component_v_progress_circular, {
                         key: 0,
@@ -2589,7 +2239,7 @@ return (_ctx, _cache) => {
                         class: "mr-2"
                       }))
                     : _createCommentVNode("", true),
-                  _createElementVNode("span", _hoisted_31, _toDisplayString(qrMsg.value || '请使用 115 客户端扫码'), 1)
+                  _createElementVNode("span", _hoisted_32, _toDisplayString(qrMsg.value || '请使用 115 客户端扫码'), 1)
                 ])
               ]),
               _: 1
@@ -2650,7 +2300,7 @@ return (_ctx, _cache) => {
               style: {"max-height":"55vh","overflow-y":"auto"}
             }, {
               default: _withCtx(() => [
-                _createElementVNode("div", _hoisted_32, [
+                _createElementVNode("div", _hoisted_33, [
                   _createVNode(_component_v_btn, {
                     variant: "text",
                     size: "small",
@@ -2673,7 +2323,7 @@ return (_ctx, _cache) => {
                         ]))]),
                         _: 1
                       }),
-                      _createElementVNode("span", _hoisted_33, _toDisplayString(p.name), 1)
+                      _createElementVNode("span", _hoisted_34, _toDisplayString(p.name), 1)
                     ], 64))
                   }), 128)),
                   _createVNode(_component_v_spacer),
@@ -2745,7 +2395,7 @@ return (_ctx, _cache) => {
                       _: 1
                     })),
                 (!dirBrowserLoading.value && !dirBrowserDirs.value.length)
-                  ? (_openBlock(), _createElementBlock("div", _hoisted_34, "无子目录"))
+                  ? (_openBlock(), _createElementBlock("div", _hoisted_35, "无子目录"))
                   : _createCommentVNode("", true)
               ]),
               _: 1
@@ -2753,7 +2403,7 @@ return (_ctx, _cache) => {
             _createVNode(_component_v_divider),
             _createVNode(_component_v_card_actions, { class: "px-4 py-3" }, {
               default: _withCtx(() => [
-                _createElementVNode("span", _hoisted_35, "当前: " + _toDisplayString(dirBrowserPathStr.value || '/'), 1),
+                _createElementVNode("span", _hoisted_36, "当前: " + _toDisplayString(dirBrowserPathStr.value || '/'), 1),
                 _createVNode(_component_v_spacer),
                 _createVNode(_component_v_btn, {
                   variant: "text",
@@ -2860,6 +2510,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-f2604944"]]);
+const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-ce97a63e"]]);
 
 export { Config as default };

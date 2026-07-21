@@ -49,8 +49,8 @@ class ResourceStrategyTest(unittest.TestCase):
         magnet = "magnet:?xt=urn:btih:" + "a" * 40
         torrents = [
             _torrent("https://115.com/s/juying", "115", source="juying"),
-            _torrent(magnet, "magnet"),
-            _torrent(magnet + "&dn=duplicate", "magnet"),
+            _torrent(magnet, "magnet", text="1080P 中文字幕"),
+            _torrent(magnet + "&dn=duplicate", "magnet", text="1080P 中文字幕"),
             _torrent("https://115.com/s/site", "115"),
             _torrent("https://115.com/s/tg", "115", source="tg", text="频道资源"),
         ]
@@ -73,6 +73,18 @@ class ResourceStrategyTest(unittest.TestCase):
             _torrent("https://115.com/s/chs", "115", text="内封简繁字幕"),
         ], True, False, _is_115)
         self.assertEqual(["https://115.com/s/chs"], [t.page_url for t in selected])
+
+    def test_auto_magnet_requires_chinese_1080p_or_4k(self):
+        selected = resource_strategy.select_auto_candidates([
+            _torrent("magnet:?xt=urn:btih:" + "1" * 40, "magnet", text="720P 中文字幕"),
+            _torrent("magnet:?xt=urn:btih:" + "2" * 40, "magnet", text="1080P English"),
+            _torrent("magnet:?xt=urn:btih:" + "3" * 40, "magnet", text="1080P 中文字幕"),
+            _torrent("magnet:?xt=urn:btih:" + "4" * 40, "magnet", text="4K 简中"),
+        ], True, False, _is_115)
+        self.assertEqual([
+            "magnet:?xt=urn:btih:" + "3" * 40,
+            "magnet:?xt=urn:btih:" + "4" * 40,
+        ], [item.page_url for item in selected])
 
     def test_cross_source_duplicate_keeps_higher_priority_tg_candidate(self):
         duplicate = "https://115.com/s/same"

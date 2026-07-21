@@ -58,15 +58,19 @@
     </v-card>
 
     <v-card v-if="runtime.tasks.length" variant="outlined" rounded="lg" class="mb-4">
-      <v-card-title class="d-flex align-center px-4 py-3">
+      <v-card-title class="d-flex align-center px-4 py-3 task-toggle" @click="tasksExpanded = !tasksExpanded">
         <v-icon icon="mdi-cloud-sync-outline" color="primary" class="mr-2" />
         CMS / 115 任务
+        <v-chip size="x-small" variant="tonal" class="ml-2">{{ runtime.tasks.length }}</v-chip>
         <v-spacer />
-        <v-btn icon variant="text" size="small" :loading="statusLoading" @click="loadRuntimeStatus">
+        <v-btn icon variant="text" size="small" :loading="statusLoading" @click.stop="loadRuntimeStatus">
           <v-icon icon="mdi-refresh" />
           <v-tooltip activator="parent" location="top">刷新任务状态</v-tooltip>
         </v-btn>
+        <v-icon :icon="tasksExpanded ? 'mdi-chevron-up' : 'mdi-chevron-down'" />
       </v-card-title>
+      <v-expand-transition>
+      <div v-show="tasksExpanded">
       <v-divider />
       <v-table density="compact">
         <thead>
@@ -107,10 +111,19 @@
           </tr>
         </tbody>
       </v-table>
+      </div>
+      </v-expand-transition>
     </v-card>
 
     <!-- ============ 手动搜索 ============ -->
     <v-card variant="outlined" rounded="lg">
+      <v-card-title class="d-flex align-center px-4 py-3">
+        <v-icon icon="mdi-magnify" color="primary" class="mr-2" />手动搜索（TG 频道 + 观影）
+      </v-card-title>
+      <v-divider />
+      <v-card-text><ManualSearch :plugin-id="PID" :api="props.api" /></v-card-text>
+    </v-card>
+    <v-card v-if="false" variant="outlined" rounded="lg">
       <v-card-title class="d-flex align-center px-4 py-3">
         <v-icon icon="mdi-magnify" color="primary" class="mr-2" />
         手动搜索网盘资源
@@ -212,6 +225,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { filterSearchResults, QUALITY_FILTERS, RESOURCE_FILTERS } from '../searchFilters.js'
+import ManualSearch from './ManualSearch.vue'
 
 const props = defineProps({
   pluginId: { type: String, default: 'TgSearch115' },
@@ -228,6 +242,7 @@ const runtime = reactive({
   tasks: [],
 })
 const statusLoading = ref(false)
+const tasksExpanded = ref(false)
 const retryingBtih = ref('')
 let statusTimer = null
 const sourceStates = computed(() => Object.entries(runtime.sources || {}).map(([name, state]) => ({ name, ...state })))
@@ -487,6 +502,7 @@ onUnmounted(() => {
 .result-card {
   min-height: 180px;
 }
+.task-toggle { cursor: pointer; }
 .line-clamp-2 {
   display: -webkit-box;
   -webkit-line-clamp: 2;

@@ -10,6 +10,7 @@ _CHINESE_SUBTITLE_RE = re.compile(
     r"(?:中文字幕|国语中字|中字|简中|繁中|简繁|内封.{0,6}(?:简|繁|中)|(?:chs|cht|chinese).{0,8}(?:sub|subtitle))",
     re.IGNORECASE,
 )
+_AUTO_MAGNET_QUALITY_RE = re.compile(r"(?:1080[pi]?|2160p|\b4k\b|\buhd\b)", re.IGNORECASE)
 
 
 def is_magnet_url(value: str) -> bool:
@@ -56,7 +57,7 @@ def select_auto_candidates(
             continue
 
         if source == "site" and prefer_site_magnet and pan_type == "magnet" and is_magnet_url(url):
-            if not has_chinese_subtitle:
+            if not has_chinese_subtitle or not _AUTO_MAGNET_QUALITY_RE.search(description):
                 continue
             if is_tv and not bool(getattr(torrent, "_tg115_is_complete", False)):
                 continue

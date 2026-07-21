@@ -116,6 +116,8 @@
         <!-- ====== Tab：手动搜索 ====== -->
         <v-window-item value="search" class="pa-4">
           <div class="section-label mb-2">手动搜索（TG 频道 + 观影）</div>
+          <ManualSearch :plugin-id="props.pluginId" :api="props.api" />
+          <div v-if="false">
           <div class="d-flex align-center ga-2 mb-3">
             <span class="text-caption text-medium-emphasis">来源</span>
             <v-btn-toggle v-model="searchSource" mandatory color="primary" density="compact" divided>
@@ -187,6 +189,7 @@
             <v-icon icon="mdi-magnify-close" size="48" class="mb-2" />
             <div class="text-body-2">未找到资源</div>
             <div class="text-caption text-medium-emphasis mt-1">提示：TG 用片名搜全历史；观影需在「插件设置」配置 app_auth</div>
+          </div>
           </div>
         </v-window-item>
 
@@ -342,7 +345,7 @@
         <!-- ============ Tab：观影 ============ -->
         <v-window-item value="site" class="pa-4">
           <div class="section-label mb-2">观影站点</div>
-          <div class="text-caption text-medium-emphasis mb-3">PoW 验证 + 全网盘资源 + 磁力链接搜索；完整磁力经 MoviePilot 匹配确认后通过 CMS 离线到 115。</div>
+          <div class="text-caption text-medium-emphasis mb-3">PoW 验证 + 全网盘资源 + 磁力链接搜索；中字 1080P/4K 磁力经 MoviePilot 确认后优先通过插件内置 115 离线，失败才回退 CMS。</div>
           <v-row>
             <v-col cols="12" md="6" class="d-flex align-center">
               <div class="mr-2">
@@ -358,7 +361,7 @@
             <v-col cols="12" class="d-flex align-center">
               <div class="mr-3">
                 <div class="text-subtitle-2">完整磁力优先离线到 115</div>
-                <div class="text-caption text-medium-emphasis">先用 MP 规则与媒体 ID 确认；电影或完整剧集磁力优先于 115 分享，再由 CMS 创建 115 离线任务</div>
+                <div class="text-caption text-medium-emphasis">先用 MP 规则与媒体 ID 确认；只自动处理中字 1080P/4K 磁力，插件内置 115 失败时才回退 CMS</div>
               </div>
               <v-spacer />
               <v-switch v-model="config.site_magnet_priority" color="primary" hide-details density="compact" />
@@ -603,6 +606,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { filterSearchResults, QUALITY_FILTERS, RESOURCE_FILTERS } from '../searchFilters.js'
+import ManualSearch from './ManualSearch.vue'
 
 const props = defineProps({
   pluginId: { type: String, default: 'TgSearch115' },
@@ -668,8 +672,8 @@ const periodOptions = [
   { title: '每 3 小时', value: 3 },
 ]
 const magnetModeOptions = [
-  { title: '115 直连（失败即回退）', value: 'direct_115' },
-  { title: '115 直连后回退 CMS', value: 'direct_then_cms' },
+  { title: '插件内置 115 优先，失败回退 CMS（默认）', value: 'direct_then_cms' },
+  { title: '仅插件内置 115，不回退', value: 'direct_115' },
   { title: '仅 CMS', value: 'cms_only' },
 ]
 const tgConcurrencyOptions = [
