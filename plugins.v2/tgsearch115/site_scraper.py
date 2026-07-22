@@ -126,7 +126,7 @@ class FilejinScraper:
         self.count = count  # 每次（每页）取多少部作品的网盘资源
         self._http = None            # 持久 httpx.Client（复用 PoW 会话）
         self._pow_solved = False
-        self._cache_key = None       # (keyword, year) 缓存键
+        self._cache_key = None       # (keyword, year, target_season) 缓存键
         self._cache_items = None     # search_suggest 作品列表缓存
         self.app_auth_valid = True   # app_auth 是否有效（失效则置 False，供 /search 提示）
         self.last_detail_error = ""  # 最近一次详情失败原因，供 API/连通测试展示
@@ -141,7 +141,8 @@ class FilejinScraper:
 
     # ============================ 同步入口 ============================
     def search(self, keyword: str, year: Optional[int] = None,
-               offset: int = 0, count: Optional[int] = None) -> Tuple[List[SiteHit], bool]:
+               offset: int = 0, count: Optional[int] = None,
+               target_season: Optional[int] = None) -> Tuple[List[SiteHit], bool]:
         """搜索关键字，返回 (命中列表, 是否还有更多)。
 
         按 search_suggest 返回的作品分批：每批 count 部作品的网盘资源。
@@ -160,7 +161,7 @@ class FilejinScraper:
         self.last_error_status = None
         cnt = count or self.count
         try:
-            items = self._get_items(term, year)
+            items = self._get_items(term, year, target_season=target_season)
             if items is None:
                 return [], False
             batch = items[offset:offset + cnt]
@@ -222,9 +223,9 @@ class FilejinScraper:
             self._http = self._make_client()
         return self._http
 
-    def _get_items(self, term: str, year: Optional[int]):
-        """获取 search_suggest 作品列表，按 (keyword, year) 缓存。失败返回 None。"""
-        key = (term, year)
+    def _get_items(self, term: str, year: Optional[int], target_season: Optional[int] = None):
+        """获取搜索作品并优先目标季页面，按季号隔离缓存。"""
+        key = (term, year, target_season)
         if self._cache_key == key and self._cache_items is not None:
             return self._cache_items
         self._ensure_access()
@@ -237,6 +238,8 @@ class FilejinScraper:
             yr = str(year)
             year_items = [it for it in items if str(it.get("year", "")) == yr]
             items = year_items
+        if target_season:
+            items = self._rank_items_for_season(items, target_season)
         logger.info(
             f"【TG115】观影搜索 '{term}' 命中 {len(items)} 部作品"
             + (f"（年份 {year} 匹配）" if year else "")
@@ -244,6 +247,48 @@ class FilejinScraper:
         self._cache_key = key
         self._cache_items = items
         return items
+
+    @staticmethod
+    def _rank_items_for_season(items: List[dict], target_season: int) -> List[dict]:
+        """Put an explicitly matching TV season ahead of broad series results.
+
+        ``search_suggest`` can return hundreds of same-year entries. The caller
+        deliberately fetches only a bounded number of detail pages, so selecting
+        the exact season before slicing is essential. This is recall ordering
+        only; media ID/type/season verification still occurs after detail parsing.
+        """
+        try:
+            season = int(target_season)
+        except (TypeError, ValueError):
+            return list(items or [])
+        chinese = {
+            0: "零", 1: "一", 2: "二", 3: "三", 4: "四", 5: "五",
+            6: "六", 7: "七", 8: "八", 9: "九", 10: "十",
+        }.get(season, "")
+        exact_patterns = [
+            rf"\bS(?:eason)?\s*0?{season}\b",
+            rf"第\s*{season}\s*季",
+        ]
+        if chinese:
+            exact_patterns.append(rf"第\s*{chinese}\s*季")
+        range_patterns = [
+            rf"(?:S(?:eason)?\s*0?1\s*[-~至到]\s*0?{season}\b)",
+            rf"(?:第?\s*1\s*[到至-]\s*第?\s*{season}\s*季)",
+            rf"(?:第?\s*一\s*[到至-]\s*第?\s*{chinese}\s*季)",
+        ] if season > 1 else []
+
+        def score(item: dict) -> int:
+            text = " ".join(str(item.get(key) or "") for key in (
+                "title", "ename", "original_title", "original_name",
+            ))
+            if any(re.search(pattern, text, re.IGNORECASE) for pattern in exact_patterns):
+                return 2
+            if any(re.search(pattern, text, re.IGNORECASE) for pattern in range_patterns):
+                return 1
+            return 0
+
+        # ``sorted`` is stable, retaining the site's ordering for ties.
+        return sorted(list(items or []), key=score, reverse=True)
 
     def _ensure_access(self):
         """确保 PoW 已解（拿到 browser_verified）。app_auth 失效则告警。"""

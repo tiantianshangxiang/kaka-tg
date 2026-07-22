@@ -224,7 +224,7 @@ class TgSearch115(_PluginBase):
         "并支持 115 分享直接转存；"
         "未命中或转存失败则平滑回退到 MoviePilot 默认站点搜索。"
     )
-    plugin_version = "4.7.22"
+    plugin_version = "4.7.23"
     plugin_author = "MoviePilot User"
     plugin_icon = "T"
     plugin_config_prefix = "plugin.tgsearch115"
@@ -1241,7 +1241,7 @@ class TgSearch115(_PluginBase):
             for query_year in query_years:
                 source_calls.append((
                     "site", lambda query_year=query_year: self._site_scraper.search(
-                        keyword, year=query_year
+                        keyword, year=query_year, target_season=target_season
                     )[0], self._site_scraper, query_year,
                 ))
         if self._juying_api:
@@ -1612,6 +1612,13 @@ class TgSearch115(_PluginBase):
             setattr(torrent, "_tg115_pan_type", pan_type)
             setattr(torrent, "_tg115_source", str(getattr(h, "_tg115_source", "") or "").lower())
             setattr(torrent, "_tg115_is_complete", bool(parsed_meta.get("is_complete")))
+            # A magnet returned by the site's detail API has a concrete resource
+            # title, page title and query year. Permit it to reach the exact
+            # MoviePilot ID/type recognizer even if its local alias parser is
+            # incomplete. It is not a confirmation and cannot bypass that check.
+            if (getattr(torrent, "_tg115_source", "") == "site"
+                    and pan_type == "magnet" and source_title and resource_title):
+                setattr(torrent, "_tg115_metadata_verified", True)
             # 115 分享页不提供 Tracker 种子大小、做种、促销和发布时间。该标记只供
             # 插件侧兼容器使用，避免把 0/未知当成真实值交给规则组误拒绝。
             if P115Transfer._is_115_share_url(url):

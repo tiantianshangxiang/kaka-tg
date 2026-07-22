@@ -59,6 +59,17 @@ class SubscriptionDryRunContractTest(unittest.TestCase):
         self.assertIn("formatSiteYears", self.page)
         self.assertIn("formatSiteHits", self.page)
 
+    def test_site_search_passes_target_season_and_marks_detail_magnets_for_exact_id_check(self):
+        start = self.source.index("def _search_auto_sources")
+        end = self.source.index("def _save_cms_tasks", start)
+        body = self.source[start:end]
+        self.assertIn("target_season=target_season", body)
+        build_start = self.source.index("def _build_torrents")
+        build_end = self.source.index("def _submit_magnet_to_115", build_start)
+        build_body = self.source[build_start:build_end]
+        self.assertIn('pan_type == "magnet"', build_body)
+        self.assertIn('setattr(torrent, "_tg115_metadata_verified", True)', build_body)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -84,6 +84,33 @@ class SiteScraperTest(unittest.TestCase):
 
         self.assertEqual([], items)
 
+    def test_target_season_page_is_ranked_before_bounded_detail_fetch(self):
+        scraper = site_scraper.FilejinScraper(app_auth="test")
+        scraper._ensure_access = lambda: None
+        scraper._search_suggest = lambda _term: (
+            True,
+            "ok",
+            [
+                {"title": "末日地堡 第一季", "year": 2024, "id": "s01"},
+                {"title": "末日地堡 第二季", "year": 2024, "id": "s02"},
+                {"title": "末日地堡 S02", "year": 2024, "id": "s02-en"},
+            ],
+        )
+
+        items = scraper._get_items("末日地堡", 2024, target_season=2)
+
+        self.assertEqual(["s02", "s02-en", "s01"], [item["id"] for item in items])
+
+    def test_target_season_range_is_prioritized_when_exact_page_is_absent(self):
+        items = [
+            {"title": "羊毛战记 第一季", "id": "s01"},
+            {"title": "羊毛战记 第1-3季", "id": "collection"},
+        ]
+
+        ranked = site_scraper.FilejinScraper._rank_items_for_season(items, 3)
+
+        self.assertEqual("collection", ranked[0]["id"])
+
     def test_parse_downurl_json(self):
         data = {
             "code": 200,
