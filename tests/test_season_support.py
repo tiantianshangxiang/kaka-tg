@@ -60,7 +60,39 @@ class SeasonSupportTest(unittest.TestCase):
         self.assertIn("权力的游戏前传：龙族 第二季", keywords)
         self.assertIn("龙之家族 S02", keywords)
         self.assertIn("House of the Dragon S02", keywords)
+        self.assertIn("权力的游戏前传：龙族", keywords)
+        self.assertIn("House of the Dragon", keywords)
         self.assertLessEqual(len(keywords), 6)
+
+    def test_seasonless_share_is_deferred_but_wrong_season_is_rejected(self):
+        seasonless = SimpleNamespace(title="海军罪案调查处 115合集", description="")
+        wrong_season = SimpleNamespace(title="海军罪案调查处 S02", description="")
+
+        self.assertTrue(
+            season.supports_target_season_or_unknown_share(seasonless, 11, True)
+        )
+        self.assertFalse(
+            season.supports_target_season_or_unknown_share(seasonless, 11, False)
+        )
+        self.assertFalse(
+            season.supports_target_season_or_unknown_share(wrong_season, 11, True)
+        )
+
+    def test_single_keyword_budget_keeps_base_title_fallback(self):
+        self.assertEqual(
+            ["海军罪案调查处"],
+            season.season_keywords(["海军罪案调查处", "NCIS"], 11, limit=1),
+        )
+
+    def test_share_metadata_season_summary_can_confirm_late_season(self):
+        names = [f"NCIS.S{number:02d}.1080p" for number in range(1, 24)]
+        summary = " ".join(
+            f"S{number:02d}" for number in sorted(season.parse_seasons(" ".join(names)))
+        )
+        candidate = SimpleNamespace(title="海军罪案调查处", description=summary)
+
+        self.assertTrue(season.supports_target_season(candidate, 11))
+        self.assertTrue(season.supports_target_season(candidate, 23))
 
     def test_site_title_keyword_removes_generated_season_suffix(self):
         self.assertEqual("嗜血法医", season.site_title_keyword("嗜血法医 S01"))

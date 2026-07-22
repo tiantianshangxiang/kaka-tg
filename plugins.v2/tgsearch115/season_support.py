@@ -134,6 +134,19 @@ def supports_target_season(candidate: Any, season: Optional[int]) -> bool:
     return bool(seasons and int(season) in seasons)
 
 
+def supports_target_season_or_unknown_share(
+        candidate: Any, season: Optional[int], is_115_share: bool) -> bool:
+    """Allow a seasonless 115 share to reach the bounded metadata probe.
+
+    A share that explicitly names another season is still rejected immediately.
+    A seasonless share is not considered matched here; callers must probe its
+    file names and run ``supports_target_season`` again before rule matching.
+    """
+    if supports_target_season(candidate, season):
+        return True
+    return bool(season is not None and is_115_share and not candidate_seasons(candidate))
+
+
 def season_distribution(candidates: Iterable[Any]) -> List[int]:
     found: Set[int] = set()
     for candidate in candidates or []:
@@ -203,18 +216,38 @@ def season_keywords(base_names: Iterable[Any], season: Optional[int], limit: int
     if season is None:
         return names[:limit]
 
+    max_items = max(1, int(limit))
+    # Keep a bounded base-title fallback for TG messages whose share covers
+    # several seasons but whose post title does not contain a season suffix.
+    # Prefer the canonical title plus one Latin alias (for example NCIS).
+    base_fallbacks = [names[0]]
+    latin_alias = next(
+        (name for name in names[1:] if re.search(r"[A-Za-z]", name)), None
+    )
+    if latin_alias and latin_alias.casefold() != names[0].casefold() and max_items > 1:
+        base_fallbacks.append(latin_alias)
+    qualified_limit = max(0, max_items - len(base_fallbacks))
+
     suffixes = ["S00", "特别篇", "Specials"] if season == 0 else [
         f"S{season:02d}", f"第{_cn_label(season)}季", f"Season {season}",
     ]
     result: List[str] = []
-    for suffix in suffixes:
-        for name in names:
-            keyword = f"{name} {suffix}"
-            if keyword.casefold() not in {item.casefold() for item in result}:
-                result.append(keyword)
-            if len(result) >= max(1, int(limit)):
-                return result
-    return result
+    if qualified_limit:
+        for suffix in suffixes:
+            for name in names:
+                keyword = f"{name} {suffix}"
+                if keyword.casefold() not in {item.casefold() for item in result}:
+                    result.append(keyword)
+                if len(result) >= qualified_limit:
+                    break
+            if len(result) >= qualified_limit:
+                break
+    for name in base_fallbacks:
+        if name.casefold() not in {item.casefold() for item in result}:
+            result.append(name)
+        if len(result) >= max_items:
+            break
+    return result[:max_items]
 
 
 def site_title_keyword(value: Any) -> str:

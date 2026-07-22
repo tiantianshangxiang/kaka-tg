@@ -96,10 +96,12 @@ from .runtime_control import SearchCoordinator, SourceCircuitBreaker, TtlCache
 from .season_support import (
     cache_covers_season,
     deduplicate_search_hits,
+    parse_seasons,
     season_distribution,
     season_keywords,
     site_title_keyword,
     supports_target_season,
+    supports_target_season_or_unknown_share,
     source_cache_key,
     target_seasons,
 )
@@ -225,7 +227,7 @@ class TgSearch115(_PluginBase):
         "并支持 115 分享直接转存；"
         "未命中或转存失败则平滑回退到 MoviePilot 默认站点搜索。"
     )
-    plugin_version = "4.7.28"
+    plugin_version = "4.7.29"
     plugin_author = "MoviePilot User"
     plugin_icon = "T"
     plugin_config_prefix = "plugin.tgsearch115"
@@ -861,7 +863,16 @@ class TgSearch115(_PluginBase):
             )
             result["season_before"] += len(keyword_hits)
             if target_season is not None:
-                keyword_hits = [hit for hit in keyword_hits if supports_target_season(hit, target_season)]
+                keyword_hits = [
+                    hit for hit in keyword_hits
+                    if supports_target_season_or_unknown_share(
+                        hit,
+                        target_season,
+                        P115Transfer._is_115_share_url(
+                            str(getattr(hit, "share_url", "") or "")
+                        ),
+                    )
+                ]
             result["season_after"] += len(keyword_hits)
             hits.extend(keyword_hits)
             if len(keyword_hits) >= 5:
@@ -874,6 +885,19 @@ class TgSearch115(_PluginBase):
 
         torrents = self._build_torrents(hits)
         self._enrich_share_metadata(torrents)
+        if target_season is not None:
+            before_metadata_season_filter = len(torrents)
+            torrents = [
+                torrent for torrent in torrents
+                if supports_target_season(torrent, target_season)
+            ]
+            logger.info(
+                "【TG115】订阅 [%s] S%02d 分享元数据季号复核: %d 条 -> %d 条",
+                subscribe.name,
+                target_season,
+                before_metadata_season_filter,
+                len(torrents),
+            )
         result["torrents"] = torrents
         matched, rule_diagnostics = self._filter_resources(subscribe, mediainfo, torrents)
         result["matched"], result["diagnostics"] = matched, rule_diagnostics
@@ -1768,14 +1792,22 @@ class TgSearch115(_PluginBase):
             if cached is None:
                 if probed:
                     time.sleep(random.uniform(0.4, 0.8))
-                ok, _message, names = self._transfer.inspect_share(torrent.page_url or "")
+                ok, _message, names = self._transfer.inspect_share(
+                    torrent.page_url or "", limit=32
+                )
                 probed += 1
                 cached = names if ok else []
                 if self._share_metadata_cache:
                     self._share_metadata_cache.set(code, cached)
             if not cached:
                 continue
-            metadata = " ".join(str(name) for name in cached[:6])
+            metadata = " ".join(str(name) for name in cached[:12])
+            detected_seasons = sorted(parse_seasons(" ".join(str(name) for name in cached[:32])))
+            if detected_seasons:
+                metadata = "%s %s" % (
+                    metadata,
+                    " ".join(f"S{season:02d}" for season in detected_seasons),
+                )
             torrent.description = f"{torrent.description or ''}\n{metadata}".strip()
             setattr(torrent, "_tg115_identity_title", metadata)
             setattr(torrent, "_tg115_metadata_verified", True)
