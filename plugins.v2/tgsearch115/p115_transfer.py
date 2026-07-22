@@ -147,6 +147,34 @@ class P115Transfer:
         })
         return True, "115 转存成功", result
 
+    def inspect_share(self, share_url: str, limit: int = 12) -> Tuple[bool, str, list[str]]:
+        """Read share names only. This never calls share_receive or modifies 115."""
+        share_code, receive_code = self._extract_payload(share_url)
+        if not share_code or not receive_code:
+            return False, "分享缺少提取码，无法只读识别", []
+        ok, message = self.is_ready()
+        if not ok:
+            return False, message, []
+        try:
+            response = self._api_get("/share/snap", {
+                "share_code": share_code, "receive_code": receive_code,
+                "cid": 0, "limit": max(1, min(int(limit), 32)), "offset": 0,
+            })
+        except Exception as exc:
+            return False, f"115 分享读取失败: {type(exc).__name__}", []
+        if not self._response_ok(response):
+            return False, "115 分享不可读取", []
+        data = response.get("data") if isinstance(response, dict) else None
+        items = data.get("list") or data.get("filelist") or [] if isinstance(data, dict) else []
+        names = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("n") or item.get("name") or item.get("file_name") or "").strip()
+            if name and name not in names:
+                names.append(name[:300])
+        return (True, "115 分享文件名已读取", names) if names else (False, "115 分享没有可识别文件名", [])
+
     # ============================ 目录操作（供 __init__ 的浏览/验证 API 用）============================
     def fs_files(self, cid: Any = 0) -> Dict[str, Any]:
         """列某 cid 下的内容（GET /files）。cid=0 为根目录。返回 115 原始 JSON dict。"""

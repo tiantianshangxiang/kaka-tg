@@ -49,7 +49,10 @@ def confirm_candidate_identity(
         if isinstance(e, AttributeError) and "value" in str(e):
             return IdentityResult(False, reason="媒体类型兼容错误，候选已安全拒绝")
         return IdentityResult(False, reason=f"本地身份初筛异常: {type(e).__name__}")
-    if not local_match:
+    # A 115 share's message often only has a generic title.  After an explicit
+    # read-only file-name probe, MediaChain + exact media ID is safer than
+    # rejecting a known alias before it can be confirmed.
+    if not local_match and not getattr(torrent, "_tg115_metadata_verified", False):
         return IdentityResult(False, reason="标题、别名、年份或媒体类型不匹配")
 
     target_type = getattr(target_media, "type", None)

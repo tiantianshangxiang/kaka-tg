@@ -53,6 +53,7 @@
 # 时 TG 频道搜索不可用，观影搜索/115转存仍正常，缺依赖会在日志告警）。
 
 import json
+import random
 import threading
 import time
 from typing import Any, Dict, List, Optional, Tuple
@@ -219,7 +220,7 @@ class TgSearch115(_PluginBase):
         "并支持 115 分享直接转存；"
         "未命中或转存失败则平滑回退到 MoviePilot 默认站点搜索。"
     )
-    plugin_version = "4.7.11"
+    plugin_version = "4.7.12"
     plugin_author = "MoviePilot User"
     plugin_icon = "T"
     plugin_config_prefix = "plugin.tgsearch115"
@@ -244,6 +245,7 @@ class TgSearch115(_PluginBase):
     _offline_client: Optional[P115OfflineClient] = None
     _recognition_gate: Optional[RecognitionGate] = None
     _notification_cache: Optional[TtlCache] = None
+    _share_metadata_cache: Optional[TtlCache] = None
 
     # 配置项（运行态缓存）
     _tg_channels: List[Dict[str, Any]] = []
@@ -291,6 +293,7 @@ class TgSearch115(_PluginBase):
         self._apply_config(config)
         stored_tasks = self.get_data(CMS_TASKS_KEY) or []
         self._cms_tasks = CmsTaskLedger(stored_tasks if isinstance(stored_tasks, list) else [])
+        self._share_metadata_cache = TtlCache(ttl_seconds=6 * 3600, maxsize=256)
 
         # 持久化（保证 get_data 可读、字段干净）
         try:
@@ -840,6 +843,7 @@ class TgSearch115(_PluginBase):
                 return
 
             torrents = self._build_torrents(hits)
+            self._enrich_share_metadata(torrents)
             matched, rule_diagnostics = self._filter_resources(subscribe, mediainfo, torrents)
             if not matched:
                 reason = rule_diagnostics.summary() if rule_diagnostics else "候选未通过 MoviePilot 规则"
@@ -1360,6 +1364,34 @@ class TgSearch115(_PluginBase):
         if filter_params:
             torrents = [t for t in torrents if TorrentHelper.filter_torrent(t, filter_params)]
         return torrents, diagnostics
+
+    def _enrich_share_metadata(self, torrents: List[TorrentInfo], max_probes: int = 3) -> None:
+        """Append read-only 115 share names before MP rule/identity filtering."""
+        if not self._transfer:
+            return
+        probed = 0
+        for torrent in torrents:
+            if probed >= max_probes or not P115Transfer._is_115_share_url(torrent.page_url or ""):
+                continue
+            code, _ = P115Transfer._extract_payload(torrent.page_url or "")
+            if not code:
+                continue
+            cached = self._share_metadata_cache.get(code) if self._share_metadata_cache else None
+            if cached is None:
+                if probed:
+                    time.sleep(random.uniform(0.4, 0.8))
+                ok, _message, names = self._transfer.inspect_share(torrent.page_url or "")
+                probed += 1
+                cached = names if ok else []
+                if self._share_metadata_cache:
+                    self._share_metadata_cache.set(code, cached)
+            if not cached:
+                continue
+            metadata = " ".join(str(name) for name in cached[:6])
+            torrent.description = f"{torrent.description or ''}\n{metadata}".strip()
+            setattr(torrent, "_tg115_identity_title", metadata)
+            setattr(torrent, "_tg115_metadata_verified", True)
+            logger.info("【TG115】115 分享只读文件名已补充候选元数据")
 
     @staticmethod
     def _get_rule_engine_snapshot(rule_groups: List[str], mediainfo) -> Optional[Tuple[List[Any], Dict[str, Any]]]:
