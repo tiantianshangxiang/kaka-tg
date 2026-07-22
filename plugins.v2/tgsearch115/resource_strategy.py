@@ -109,6 +109,36 @@ class CandidateExecutionResult:
     via_magnet: bool = False
     recognition_attempts: int = 0
     errors: List[str] = field(default_factory=list)
+    rejection_reasons: List[str] = field(default_factory=list)
+
+    def rejection_summary(self) -> str:
+        """Return a safe, stable reason without leaking candidate data."""
+        if not self.rejection_reasons:
+            return ""
+        counts = {}
+        for reason in self.rejection_reasons:
+            counts[reason] = counts.get(reason, 0) + 1
+        return max(counts, key=counts.get)
+
+
+def _identity_rejection_category(identity: Any) -> str:
+    reason = str(getattr(identity, "reason", "") or "")
+    source = str(getattr(identity, "match_source", "") or "")
+    if source == "identity_unavailable" or "识别" in reason:
+        return "MoviePilot 媒体识别不可用"
+    if "TMDB ID 不匹配" in reason:
+        return "TMDB ID 不一致"
+    if "豆瓣 ID 不匹配" in reason:
+        return "豆瓣 ID 不一致"
+    if "季号" in reason:
+        return "候选季号不匹配"
+    if "媒体类型" in reason:
+        return "候选媒体类型不一致"
+    if "标题" in reason or "别名" in reason or "年份" in reason:
+        return "候选标题、年份或别名不匹配"
+    if "缺少 TMDB/豆瓣 ID" in reason:
+        return "订阅缺少媒体 ID，已安全拒绝"
+    return "候选未通过 MoviePilot/TMDB 身份确认"
 
 
 def execute_auto_candidates(
@@ -130,6 +160,7 @@ def execute_auto_candidates(
         if bool(getattr(identity, "recognition_attempted", False)):
             result.recognition_attempts += 1
         if not bool(getattr(identity, "confirmed", False)):
+            result.rejection_reasons.append(_identity_rejection_category(identity))
             if result.recognition_attempts >= max_recognition_attempts:
                 break
             continue

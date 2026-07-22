@@ -187,6 +187,23 @@ class ResourceStrategyTest(unittest.TestCase):
         self.assertEqual([], submitted)
         self.assertEqual([], transferred)
 
+    def test_identity_rejection_is_summarized_without_candidate_title(self):
+        candidate = _torrent("https://115.com/s/unavailable", "115")
+        result = resource_strategy.execute_auto_candidates(
+            candidates=[candidate],
+            confirm_identity=lambda _candidate: SimpleNamespace(
+                confirmed=False,
+                recognition_attempted=True,
+                match_source="rejected",
+                reason="TMDB ID 不匹配: 需要 1，候选 2",
+            ),
+            submit_magnet=lambda _item: (True, "unexpected"),
+            transfer_share=lambda _item: (True, "unexpected"),
+        )
+
+        self.assertEqual("TMDB ID 不一致", result.rejection_summary())
+        self.assertNotIn("需要", result.rejection_summary())
+
 
 if __name__ == "__main__":
     unittest.main()

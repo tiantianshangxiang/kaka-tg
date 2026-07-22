@@ -85,6 +85,7 @@ from .resource_strategy import (
     select_auto_candidates,
     submit_magnet_with_fallback,
 )
+from .offline_rule_compat import RuleCompatibilityDiagnostics, filter_offline_share_rules
 from .cms_client import Cms115Client
 from .cms_tasks import CmsTaskLedger, btih_from_magnet
 from .p115_offline import P115OfflineClient
@@ -218,7 +219,7 @@ class TgSearch115(_PluginBase):
         "并支持 115 分享直接转存；"
         "未命中或转存失败则平滑回退到 MoviePilot 默认站点搜索。"
     )
-    plugin_version = "4.7.9"
+    plugin_version = "4.7.10"
     plugin_author = "MoviePilot User"
     plugin_icon = "T"
     plugin_config_prefix = "plugin.tgsearch115"
@@ -839,11 +840,15 @@ class TgSearch115(_PluginBase):
                 return
 
             torrents = self._build_torrents(hits)
-            matched = self._filter_resources(subscribe, mediainfo, torrents)
+            matched, rule_diagnostics = self._filter_resources(subscribe, mediainfo, torrents)
             if not matched:
-                logger.info(f"【TG115】订阅 [{subscribe.name}] 资源均不符合 MP 过滤规则，回退到默认搜索")
+                reason = rule_diagnostics.summary() if rule_diagnostics else "候选未通过 MoviePilot 规则"
+                logger.info(
+                    f"【TG115】订阅 [{subscribe.name}] 资源均不符合 MP 过滤规则，"
+                    f"原因: {reason}，回退到默认搜索"
+                )
                 self._send_fail_notify(
-                    subscribe, "候选未通过 MoviePilot 规则", source_report
+                    subscribe, reason, source_report
                 )
                 return
 
@@ -916,7 +921,7 @@ class TgSearch115(_PluginBase):
                     "没有候选成功提交，回退到默认搜索"
                 )
                 reason = execution.errors[-1] if execution.errors \
-                    else "候选未通过 MoviePilot/TMDB 身份确认"
+                    else execution.rejection_summary() or "候选未通过 MoviePilot/TMDB 身份确认"
                 self._send_fail_notify(subscribe, reason, source_report)
                 return
             logger.info(f"【TG115】订阅 [{subscribe.name}] 命中资源: {best.title}（链接已省略）")
@@ -1238,6 +1243,12 @@ class TgSearch115(_PluginBase):
             setattr(torrent, "_tg115_pan_type", pan_type)
             setattr(torrent, "_tg115_source", str(getattr(h, "_tg115_source", "") or "").lower())
             setattr(torrent, "_tg115_is_complete", bool(parsed_meta.get("is_complete")))
+            # 115 分享页不提供 Tracker 种子大小、做种、促销和发布时间。该标记只供
+            # 插件侧兼容器使用，避免把 0/未知当成真实值交给规则组误拒绝。
+            if P115Transfer._is_115_share_url(url):
+                setattr(torrent, "_tg115_unavailable_rule_fields", {
+                    "size", "seeders", "downloadvolumefactor", "publish_time",
+                })
             torrents.append(torrent)
         return torrents
 
@@ -1301,15 +1312,18 @@ class TgSearch115(_PluginBase):
             raise RuntimeError("115 目录模块未初始化")
         return str(self._transfer._get_or_create_cid(target))
 
-    def _filter_resources(self, subscribe, mediainfo, torrents: List[TorrentInfo]) -> List[TorrentInfo]:
+    def _filter_resources(
+            self, subscribe, mediainfo, torrents: List[TorrentInfo]
+    ) -> Tuple[List[TorrentInfo], Optional[RuleCompatibilityDiagnostics]]:
         """复用 MP 内置过滤规则：先规则组，再 include/exclude/清晰度等参数。"""
         if not torrents:
-            return []
+            return [], None
+        diagnostics = None
         if self._use_rule_groups:
             rule_groups = self._get_rule_groups(subscribe)
             if rule_groups:
                 try:
-                    torrents = filter_with_offline_seed_override(
+                    native_matched = filter_with_offline_seed_override(
                         torrents,
                         lambda items: SubscribeChain().filter_torrents(
                             rule_groups=rule_groups,
@@ -1317,12 +1331,53 @@ class TgSearch115(_PluginBase):
                             mediainfo=mediainfo,
                         ) or [],
                     )
+                    # Only 115 shares use compatibility evaluation. Magnets keep the
+                    # existing seeder override and all other native MP behavior.
+                    share_candidates = [
+                        item for item in torrents
+                        if getattr(item, "_tg115_unavailable_rule_fields", None)
+                    ]
+                    compat_matched = []
+                    if share_candidates:
+                        snapshot = self._get_rule_engine_snapshot(rule_groups, mediainfo)
+                        if snapshot:
+                            groups, rules = snapshot
+                            compat_matched, diagnostics = filter_offline_share_rules(
+                                share_candidates, groups, rules, mediainfo
+                            )
+                            if diagnostics.matched_count:
+                                logger.info(
+                                    "【TG115】%s" % diagnostics.summary()
+                                )
+                        else:
+                            logger.warn("【TG115】无法读取 MoviePilot 规则定义，115 分享保持原始规则结果")
+                    allowed = {id(item) for item in native_matched}
+                    allowed.update(id(item) for item in compat_matched)
+                    torrents = [item for item in torrents if id(item) in allowed]
                 except Exception as e:
                     logger.warn(f"【TG115】filter_torrents 异常，跳过规则组过滤: {e}")
         filter_params = self._get_filter_params(subscribe)
         if filter_params:
             torrents = [t for t in torrents if TorrentHelper.filter_torrent(t, filter_params)]
-        return torrents
+        return torrents, diagnostics
+
+    @staticmethod
+    def _get_rule_engine_snapshot(rule_groups: List[str], mediainfo) -> Optional[Tuple[List[Any], Dict[str, Any]]]:
+        """Read the running MP filter module without mutating its global rule set."""
+        try:
+            modules = SubscribeChain().modulemanager.get_running_modules("filter_torrents")
+            for module in modules or []:
+                helper = getattr(module, "rulehelper", None)
+                definitions = getattr(module, "rule_set", None)
+                if not helper or not isinstance(definitions, dict):
+                    continue
+                groups = helper.get_rule_group_by_media(
+                    media=mediainfo, group_names=rule_groups
+                )
+                return list(groups or []), dict(definitions)
+        except Exception as exc:
+            logger.warn(f"【TG115】读取 MoviePilot 规则定义失败: {type(exc).__name__}")
+        return None
 
     @staticmethod
     def _deduplicate_115_torrents(torrents: List[TorrentInfo]) -> List[TorrentInfo]:
