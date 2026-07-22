@@ -90,6 +90,13 @@ class SubscriptionDryRunContractTest(unittest.TestCase):
         self.assertLess(stop_pos, gate_pos)
         self.assertLess(gate_pos, coordinator_pos)
 
+    def test_evaluator_preserves_candidate_source_priority(self):
+        start = self.source.index("def _evaluate_subscription_candidates")
+        end = self.source.index("def _dry_run_summary", start)
+        body = self.source[start:end]
+        self.assertIn("candidates = list(auto_candidates)", body)
+        self.assertNotIn("candidates = magnets + shares", body)
+
 
 if __name__ == "__main__":
     unittest.main()

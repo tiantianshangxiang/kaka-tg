@@ -3,7 +3,7 @@
     "name": "拦截mp订阅",
     "description": "按 TG、观影 115 中文字幕、观影中字 1080P/4K 磁力、聚影顺序搜索；磁力默认插件内置 115，失败回退 CMS。",
     "labels": "订阅,Telegram,115网盘",
-    "version": "4.7.26",
+    "version": "4.7.27",
     "author": "MoviePilot User",
     "level": 2,
     "history": {

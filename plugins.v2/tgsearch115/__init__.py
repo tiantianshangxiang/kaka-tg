@@ -225,7 +225,7 @@ class TgSearch115(_PluginBase):
         "并支持 115 分享直接转存；"
         "未命中或转存失败则平滑回退到 MoviePilot 默认站点搜索。"
     )
-    plugin_version = "4.7.26"
+    plugin_version = "4.7.27"
     plugin_author = "MoviePilot User"
     plugin_icon = "T"
     plugin_config_prefix = "plugin.tgsearch115"
@@ -890,12 +890,10 @@ class TgSearch115(_PluginBase):
             is_tv=is_tv_media(getattr(subscribe, "type", None)),
             is_115_url=P115Transfer._is_115_share_url,
         )
-        magnets = [candidate for candidate in auto_candidates if is_magnet_url(candidate.page_url or "")]
-        shares = self._deduplicate_115_torrents([
-            candidate for candidate in auto_candidates
-            if P115Transfer._is_115_share_url(candidate.page_url or "")
-        ])
-        candidates = magnets + shares
+        # ``select_auto_candidates`` already applies the contractual source
+        # order and de-duplicates within/cross buckets. Rebuilding the result as
+        # ``magnets + shares`` silently reversed Guanying 115 and magnet priority.
+        candidates = list(auto_candidates)
         result["candidates"] = candidates
         if not candidates:
             result["reason"] = "没有符合自动策略的完整中文字幕 1080P/4K 资源"
@@ -1150,14 +1148,8 @@ class TgSearch115(_PluginBase):
                 is_tv=is_tv,
                 is_115_url=P115Transfer._is_115_share_url,
             )
-            magnet_candidates = [
-                t for t in auto_candidates if is_magnet_url(t.page_url or "")
-            ]
-            share_candidates = self._deduplicate_115_torrents([
-                t for t in auto_candidates
-                if P115Transfer._is_115_share_url(t.page_url or "")
-            ])
-            auto_candidates = magnet_candidates + share_candidates
+            # Preserve TG 115 -> Guanying 115 -> Guanying magnet -> Juying.
+            auto_candidates = list(auto_candidates)
             if not auto_candidates:
                 logger.info(
                     f"【TG115】订阅 [{subscribe.name}] 命中 {len(matched)} 条资源，"
