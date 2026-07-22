@@ -256,6 +256,22 @@ class IdentityMatcherTest(unittest.TestCase):
         self.assertTrue(result.confirmed)
         self.assertEqual("tv_year_deferred_to_tmdb", result.year_policy)
 
+    def test_tmdb_search_fallback_selects_exact_id_from_multiple_results(self):
+        target = SimpleNamespace(type="TV", tmdb_id=100, douban_id=None, season=3, year=2023)
+        subscribe = SimpleNamespace(tmdbid=100, doubanid=None, season=3, year=2023, episode_group=None)
+        torrent = _torrent(title="Silo.S03.2026.1080p.CHINESE", local_match=False)
+        torrent._tg115_metadata_verified = True
+        wrong = SimpleNamespace(type="TV", tmdb_id=200, douban_id=None)
+        exact = SimpleNamespace(type="TV", tmdb_id=100, douban_id=None)
+
+        result = identity_matcher.confirm_candidate_identity(
+            subscribe, target, torrent,
+            recognize_candidate=lambda _meta, _group: [wrong, exact],
+        )
+
+        self.assertTrue(result.confirmed)
+        self.assertEqual("tmdb_id", result.match_source)
+
     def test_tv_year_difference_still_rejects_wrong_tmdb_id(self):
         target = SimpleNamespace(type="TV", tmdb_id=100, douban_id=None, season=3, year=2023)
         subscribe = SimpleNamespace(tmdbid=100, doubanid=None, season=3, year=2023, episode_group=None)

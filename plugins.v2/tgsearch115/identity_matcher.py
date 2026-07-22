@@ -27,6 +27,25 @@ def _normalize_id(value) -> str:
     return str(value or "").strip()
 
 
+def _select_recognized_media(value, target_tmdb: str, target_douban: str):
+    """Prefer an exact-ID item when MoviePilot TMDB search returns a list."""
+    candidates = list(value) if isinstance(value, (list, tuple)) else [value]
+    candidates = [item for item in candidates if item]
+    if target_tmdb:
+        return next(
+            (item for item in candidates
+             if _normalize_id(getattr(item, "tmdb_id", None)) == target_tmdb),
+            candidates[0] if candidates else None,
+        )
+    if target_douban:
+        return next(
+            (item for item in candidates
+             if _normalize_id(getattr(item, "douban_id", None)) == target_douban),
+            candidates[0] if candidates else None,
+        )
+    return candidates[0] if candidates else None
+
+
 def confirm_candidate_identity(
         subscribe, target_media, torrent, recognize_candidate=None) -> IdentityResult:
     """Confirm one candidate without causing download or subscription side effects."""
@@ -103,12 +122,12 @@ def confirm_candidate_identity(
 
     try:
         if recognize_candidate:
-            candidate_media = recognize_candidate(
+            recognized = recognize_candidate(
                 candidate_meta,
                 getattr(subscribe, "episode_group", None),
             )
         else:
-            candidate_media = MediaChain().recognize_by_meta(
+            recognized = MediaChain().recognize_by_meta(
                 candidate_meta,
                 episode_group=getattr(subscribe, "episode_group", None),
                 obtain_images=False,
@@ -123,6 +142,7 @@ def confirm_candidate_identity(
             identity_path=("share_metadata_tmdb_fallback" if not local_match else "local_match"),
             **diagnostic,
         )
+    candidate_media = _select_recognized_media(recognized, target_tmdb, target_douban)
     if not candidate_media:
         return IdentityResult(
             False, reason="MoviePilot 无法识别候选媒体", recognition_attempted=True,

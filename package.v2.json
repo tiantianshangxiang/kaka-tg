@@ -3,10 +3,11 @@
     "name": "拦截mp订阅",
     "description": "按 TG、观影 115 中文字幕、观影中字 1080P/4K 磁力、聚影顺序搜索；磁力默认插件内置 115，失败回退 CMS。",
     "labels": "订阅,Telegram,115网盘",
-    "version": "4.7.16",
+    "version": "4.7.17",
     "author": "MoviePilot User",
     "level": 2,
     "history": {
+      "v4.7.17": "修复新版 MoviePilot/PostgreSQL 下季首播年份与候选识别兼容：MediaInfo 缺失 season_years 时通过宿主只读 TMDB 季接口补齐；MediaChain 游标生命周期异常时受限回退到宿主 TMDB 搜索，多个结果仅选择 TMDB/豆瓣 ID 精确一致项。未放宽类型、季号、完整剧集、字幕或规则门槛。",
       "v4.7.16": "修复插件启动失败：115 分享元数据缓存使用 TtlCache 正确的 max_entries 参数，不再因 maxsize 参数不存在导致 MoviePilot 无法加载插件。",
       "v4.7.15": "修复 MoviePilot v2.14 Vue 详情页兼容：get_page 返回最小无状态占位标记，使宿主不会把联邦 Page 误判为“没有详情页面”；详情仍由插件 Vue 页面渲染。",
       "v4.7.14": "补全订阅干跑审计：候选年份改为脱敏的年份分布（年份×数量），详情页显示年份拒绝、季级 TMDB 延后确认、TMDB 一致/不一致、类型/季号不一致及最终安全候选计数；不改变自动处理门槛。",

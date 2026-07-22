@@ -64,6 +64,7 @@ from fastapi import Body
 from app.core.config import settings
 from app.chain.subscribe import SubscribeChain, build_subscribe_meta
 from app.chain.media import MediaChain
+from app.chain.tmdb import TmdbChain
 from app.core.context import MediaInfo, TorrentInfo
 from app.core.event import Event, eventmanager
 from app.db.subscribe_oper import SubscribeOper
@@ -103,6 +104,7 @@ from .season_support import (
 )
 from .recognition_control import RecognitionGate, RecognitionUnavailable
 from .search_reporting import SearchReport
+from .tmdb_support import season_year_map
 
 
 # get_data / save_data 存储本插件配置使用的 key
@@ -221,7 +223,7 @@ class TgSearch115(_PluginBase):
         "并支持 115 分享直接转存；"
         "未命中或转存失败则平滑回退到 MoviePilot 默认站点搜索。"
     )
-    plugin_version = "4.7.16"
+    plugin_version = "4.7.17"
     plugin_author = "MoviePilot User"
     plugin_icon = "T"
     plugin_config_prefix = "plugin.tgsearch115"
@@ -247,6 +249,7 @@ class TgSearch115(_PluginBase):
     _recognition_gate: Optional[RecognitionGate] = None
     _notification_cache: Optional[TtlCache] = None
     _share_metadata_cache: Optional[TtlCache] = None
+    _season_year_cache: Optional[TtlCache] = None
 
     # 配置项（运行态缓存）
     _tg_channels: List[Dict[str, Any]] = []
@@ -339,6 +342,7 @@ class TgSearch115(_PluginBase):
         self._offline_allow_cancel = self._to_bool(config.get("offline_allow_cancel"), False)
         self._search_cache = TtlCache(ttl_seconds=cache_hours * 3600)
         self._notification_cache = TtlCache(ttl_seconds=600, max_entries=256)
+        self._season_year_cache = TtlCache(ttl_seconds=6 * 3600, max_entries=128)
         self._source_breaker = SourceCircuitBreaker(
             failure_threshold=failure_threshold,
             cooldown_seconds=cooldown_minutes * 60,
@@ -1354,6 +1358,7 @@ class TgSearch115(_PluginBase):
                 label="subscription",
             )
             if mediainfo:
+                self._hydrate_tv_season_years(mediainfo, subscribe)
                 return mediainfo
         except RecognitionUnavailable as exc:
             logger.warning(
@@ -1368,10 +1373,12 @@ class TgSearch115(_PluginBase):
             if not media_type:
                 logger.warning("【TG115】订阅媒体类型无法兼容，已安全回退默认搜索")
                 return None
-            return MediaInfo(
+            mediainfo = MediaInfo(
                 type=media_type, title=subscribe.name, year=subscribe.year,
                 tmdb_id=subscribe.tmdbid, douban_id=subscribe.doubanid,
             )
+            self._hydrate_tv_season_years(mediainfo, subscribe)
+            return mediainfo
         except Exception as exc:
             logger.warning(f"【TG115】订阅媒体类型兜底失败 type={type(exc).__name__}")
             return None
@@ -1397,15 +1404,60 @@ class TgSearch115(_PluginBase):
         )
 
     def _recognize_candidate(self, candidate_meta, episode_group=None):
-        return self._run_recognition(
-            factory=MediaChain,
-            operation=lambda chain: chain.recognize_by_meta(
-                candidate_meta,
-                episode_group=episode_group,
-                obtain_images=False,
-            ),
-            label="candidate",
-        )
+        try:
+            return self._run_recognition(
+                factory=MediaChain,
+                operation=lambda chain: chain.recognize_by_meta(
+                    candidate_meta,
+                    episode_group=episode_group,
+                    obtain_images=False,
+                ),
+                label="candidate",
+            )
+        except RecognitionUnavailable:
+            # Newer MP/PostgreSQL combinations can occasionally fail while
+            # releasing MediaChain's recognition cursor. Query the same native
+            # TMDB module directly as a read-only fallback. IdentityMatcher
+            # still requires an exact subscribed TMDB/Douban ID afterwards.
+            results = self._run_recognition(
+                factory=TmdbChain,
+                operation=lambda chain: chain.run_module(
+                    "search_medias", meta=candidate_meta
+                ),
+                label="candidate_tmdb_fallback",
+            )
+            return (results or [None])[0]
+
+    def _hydrate_tv_season_years(self, mediainfo, subscribe) -> None:
+        """Fill missing TV season premiere years through MP's read-only TMDB chain."""
+        if not mediainfo or not is_tv_media(getattr(mediainfo, "type", None)):
+            return
+        try:
+            target_season = int(getattr(subscribe, "season", None))
+        except (TypeError, ValueError):
+            return
+        existing = getattr(mediainfo, "season_years", None) or {}
+        if existing.get(target_season, existing.get(str(target_season))):
+            return
+        tmdb_id = getattr(subscribe, "tmdbid", None) or getattr(mediainfo, "tmdb_id", None)
+        try:
+            tmdb_id = int(tmdb_id)
+        except (TypeError, ValueError):
+            return
+        cache_key = (tmdb_id, target_season)
+        cached = self._season_year_cache.get(cache_key) if self._season_year_cache else None
+        if cached is None:
+            try:
+                cached = season_year_map(TmdbChain().tmdb_seasons(tmdb_id))
+            except Exception as exc:
+                logger.warning("【TG115】TMDB 季首播年份读取失败 type=%s", type(exc).__name__)
+                cached = {}
+            if self._season_year_cache:
+                self._season_year_cache.set(cache_key, cached)
+        if cached:
+            merged = dict(existing)
+            merged.update(cached)
+            mediainfo.season_years = merged
 
     @staticmethod
     def _build_keyword(subscribe) -> str:
