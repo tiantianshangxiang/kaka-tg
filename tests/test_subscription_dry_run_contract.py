@@ -50,10 +50,14 @@ class SubscriptionDryRunContractTest(unittest.TestCase):
         self.assertIn('"candidate_year_distribution"', self.source)
         self.assertIn('Counter(', self.source)
         for field in ("year_rejected", "year_deferred", "tmdb_matched", "tmdb_mismatch",
-                      "type_mismatch", "season_mismatch", "safe_candidates"):
+                      "type_mismatch", "season_mismatch", "site_magnets", "site_chinese_1080p",
+                      "site_chinese_4k", "safe_candidates"):
             self.assertIn(field, self.source)
             self.assertIn(field, self.page)
         self.assertIn("formatYearDistribution", self.page)
+        self.assertIn('"site_search"', self.source)
+        self.assertIn("formatSiteYears", self.page)
+        self.assertIn("formatSiteHits", self.page)
 
 
 if __name__ == "__main__":

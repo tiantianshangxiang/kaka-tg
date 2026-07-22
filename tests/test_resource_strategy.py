@@ -107,6 +107,12 @@ class ResourceStrategyTest(unittest.TestCase):
             "magnet:?xt=urn:btih:" + "4" * 40,
         ], [item.page_url for item in selected])
 
+    def test_chinese_word_marker_is_accepted_for_site_magnet(self):
+        selected = resource_strategy.select_auto_candidates([
+            _torrent("magnet:?xt=urn:btih:" + "5" * 40, "magnet", text="S03 2026 4K 中文 完整季"),
+        ], True, False, _is_115)
+        self.assertEqual(1, len(selected))
+
     def test_cross_source_duplicate_keeps_higher_priority_tg_candidate(self):
         duplicate = "https://115.com/s/same"
         selected = resource_strategy.select_auto_candidates([

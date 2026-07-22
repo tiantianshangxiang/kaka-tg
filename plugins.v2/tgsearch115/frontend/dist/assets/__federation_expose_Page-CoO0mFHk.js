@@ -49,7 +49,9 @@ const _hoisted_24 = { class: "text-caption text-medium-emphasis mt-1" };
 const _hoisted_25 = { class: "text-caption text-medium-emphasis" };
 const _hoisted_26 = { class: "text-caption text-medium-emphasis" };
 const _hoisted_27 = { class: "text-caption text-medium-emphasis" };
-const _hoisted_28 = {
+const _hoisted_28 = { class: "text-caption text-medium-emphasis" };
+const _hoisted_29 = { class: "text-caption text-medium-emphasis" };
+const _hoisted_30 = {
   key: 0,
   class: "text-caption mt-2 text-warning"
 };
@@ -244,6 +246,16 @@ async function runDryRun() {
   } finally {
     dryRunLoading.value = false;
   }
+}
+
+function formatSiteYears(years) {
+  return Array.isArray(years) && years.length ? years.join('、') : '无'
+}
+
+function formatSiteHits(values) {
+  if (!values || typeof values !== 'object') return '无'
+  const entries = Object.entries(values);
+  return entries.length ? entries.map(([year, count]) => `${year}:${count}`).join('、') : '无'
 }
 
 function showSnack(text, color) {
@@ -758,8 +770,10 @@ return (_ctx, _cache) => {
                   _createElementVNode("div", _hoisted_25, "季号初筛：" + _toDisplayString(dryRunResult.value.counts?.season_before || 0) + " → " + _toDisplayString(dryRunResult.value.counts?.season_after || 0) + "；文件名探测：" + _toDisplayString(dryRunResult.value.counts?.metadata_verified || 0) + "；最终安全候选：" + _toDisplayString(dryRunResult.value.counts?.safe_candidates || 0), 1),
                   _createElementVNode("div", _hoisted_26, "年份：订阅 " + _toDisplayString(dryRunResult.value.subscription?.year || '未知') + "；目标季首播 " + _toDisplayString(dryRunResult.value.subscription?.target_season_year || '未知') + "；候选 " + _toDisplayString(formatYearDistribution(dryRunResult.value.candidate_year_distribution)), 1),
                   _createElementVNode("div", _hoisted_27, "年份拒绝 " + _toDisplayString(dryRunResult.value.counts?.year_rejected || 0) + "；季级 TMDB 延后确认 " + _toDisplayString(dryRunResult.value.counts?.year_deferred || 0) + "；TMDB 一致/不一致 " + _toDisplayString(dryRunResult.value.counts?.tmdb_matched || 0) + "/" + _toDisplayString(dryRunResult.value.counts?.tmdb_mismatch || 0) + "；类型不一致 " + _toDisplayString(dryRunResult.value.counts?.type_mismatch || 0) + "；季号不一致 " + _toDisplayString(dryRunResult.value.counts?.season_mismatch || 0), 1),
+                  _createElementVNode("div", _hoisted_28, "观影查询年份：" + _toDisplayString(formatSiteYears(dryRunResult.value.site_search?.years)) + "；召回：" + _toDisplayString(formatSiteHits(dryRunResult.value.site_search?.hits_by_year)), 1),
+                  _createElementVNode("div", _hoisted_29, "观影详情磁力：" + _toDisplayString(dryRunResult.value.counts?.site_magnets || 0) + "；中字 1080P：" + _toDisplayString(dryRunResult.value.counts?.site_chinese_1080p || 0) + "；中字 4K：" + _toDisplayString(dryRunResult.value.counts?.site_chinese_4k || 0), 1),
                   (dryRunResult.value.reason)
-                    ? (_openBlock(), _createElementBlock("div", _hoisted_28, "结论：" + _toDisplayString(dryRunResult.value.reason), 1))
+                    ? (_openBlock(), _createElementBlock("div", _hoisted_30, "结论：" + _toDisplayString(dryRunResult.value.reason), 1))
                     : _createCommentVNode("", true)
                 ]))
               : _createCommentVNode("", true)
@@ -816,6 +830,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Page = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-036abb8f"]]);
+const Page = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-1c5d3da9"]]);
 
 export { Page as default };

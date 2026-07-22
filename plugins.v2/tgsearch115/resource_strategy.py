@@ -7,7 +7,7 @@ from typing import Any, Callable, Iterable, List, Optional, Tuple
 
 _BTIH_RE = re.compile(r"(?:^|[?&])xt=urn:btih:([a-z0-9]+)", re.IGNORECASE)
 _CHINESE_SUBTITLE_RE = re.compile(
-    r"(?:中文字幕|国语中字|中字|简中|繁中|简繁|内封.{0,6}(?:简|繁|中)|(?:chs|cht|chinese).{0,8}(?:sub|subtitle))",
+    r"(?:中文字幕|国语中字|中字|中文|简中|繁中|简繁|内封.{0,6}(?:简|繁|中)|\b(?:chs|cht|chinese)\b)",
     re.IGNORECASE,
 )
 _AUTO_MAGNET_QUALITY_RE = re.compile(r"(?:1080[pi]?|2160p|\b4k\b|\buhd\b)", re.IGNORECASE)

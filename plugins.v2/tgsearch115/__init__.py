@@ -105,6 +105,7 @@ from .season_support import (
 from .recognition_control import RecognitionGate, RecognitionUnavailable
 from .search_reporting import SearchReport
 from .tmdb_support import season_year_map
+from .site_query_policy import site_query_years
 
 
 # get_data / save_data 存储本插件配置使用的 key
@@ -223,7 +224,7 @@ class TgSearch115(_PluginBase):
         "并支持 115 分享直接转存；"
         "未命中或转存失败则平滑回退到 MoviePilot 默认站点搜索。"
     )
-    plugin_version = "4.7.20"
+    plugin_version = "4.7.22"
     plugin_author = "MoviePilot User"
     plugin_icon = "T"
     plugin_config_prefix = "plugin.tgsearch115"
@@ -824,6 +825,7 @@ class TgSearch115(_PluginBase):
             "hits": [], "torrents": [], "matched": [], "candidates": [],
             "identities": {}, "confirmed": [], "reason": "", "diagnostics": None,
             "season_before": 0, "season_after": 0,
+            "site_query_years": [], "site_query_hits": {},
         }
         try:
             meta = build_subscribe_meta(subscribe)
@@ -838,12 +840,15 @@ class TgSearch115(_PluginBase):
 
         seasons = target_seasons(subscribe)
         target_season = seasons[0] if len(seasons) == 1 else getattr(subscribe, "season", None)
+        site_years = site_query_years(subscribe, mediainfo, target_season)
+        result["site_query_years"] = site_years
         hits: List[Any] = []
         for keyword in self._build_keywords(subscribe, mediainfo, target_season):
             keyword_hits = self._search_auto_sources(
                 keyword=keyword, year=getattr(subscribe, "year", None),
                 media_type=getattr(subscribe, "type", ""), target_season=target_season,
-                source_report=report,
+                source_report=report, site_years=site_years,
+                search_diagnostics=result["site_query_hits"],
             )
             result["season_before"] += len(keyword_hits)
             if target_season is not None:
@@ -938,6 +943,22 @@ class TgSearch115(_PluginBase):
                 item.candidate_year for item in identities if item.candidate_year
             ).items())
         }
+        site_torrents = [
+            item for item in evaluation.get("torrents") or []
+            if str(getattr(item, "_tg115_source", "") or "").lower() == "site"
+        ]
+        site_magnets = [
+            item for item in site_torrents
+            if str(getattr(item, "_tg115_pan_type", "") or "").lower() == "magnet"
+        ]
+        def site_quality_count(pattern: str) -> int:
+            return sum(
+                1 for item in site_magnets
+                if _re.search(pattern, " ".join((
+                    str(getattr(item, "title", "") or ""),
+                    str(getattr(item, "description", "") or ""),
+                )), _re.IGNORECASE)
+            )
         return {
             "subscription": {"id": getattr(subscribe, "id", None), "title": str(getattr(subscribe, "name", "") or "")[:120],
                              "year": getattr(subscribe, "year", None), "season": target_season,
@@ -956,7 +977,18 @@ class TgSearch115(_PluginBase):
                 "tmdb_mismatch": sum("TMDB ID 不匹配" in item.reason for item in identities),
                 "type_mismatch": sum("媒体类型" in item.reason for item in identities),
                 "season_mismatch": sum("季号" in item.reason for item in identities),
+                "site_magnets": len(site_magnets),
+                "site_chinese_1080p": site_quality_count(
+                    r"(?:中字|中文|简中|繁中|简繁|\b(?:chs|cht|chinese)\b).*(?:1080[pi]?)|(?:1080[pi]?).*(?:中字|中文|简中|繁中|简繁|\b(?:chs|cht|chinese)\b)"
+                ),
+                "site_chinese_4k": site_quality_count(
+                    r"(?:中字|中文|简中|繁中|简繁|\b(?:chs|cht|chinese)\b).*(?:4k|2160p|uhd)|(?:4k|2160p|uhd).*(?:中字|中文|简中|繁中|简繁|\b(?:chs|cht|chinese)\b)"
+                ),
                 "safe_candidates": len(evaluation.get("confirmed") or []),
+            },
+            "site_search": {
+                "years": ["无年份" if item is None else item for item in evaluation.get("site_query_years", [])],
+                "hits_by_year": dict(evaluation.get("site_query_hits") or {}),
             },
             "candidate_year_distribution": candidate_year_distribution,
             "reason": str(evaluation.get("reason") or ""),
@@ -1192,7 +1224,9 @@ class TgSearch115(_PluginBase):
     def _search_auto_sources(
             self, keyword: str, year: Optional[int], media_type: Any = "",
             target_season: Optional[int] = None,
-            source_report: Optional[SearchReport] = None) -> List[Any]:
+            source_report: Optional[SearchReport] = None,
+            site_years: Optional[List[Optional[int]]] = None,
+            search_diagnostics: Optional[Dict[str, int]] = None) -> List[Any]:
         """Search enabled sources with per-source TTL caching and circuit breaking."""
         hits: List[Any] = []
         source_calls = []
@@ -1200,19 +1234,32 @@ class TgSearch115(_PluginBase):
                 channel.get("enabled", True) for channel in self._tg_channels):
             source_calls.append(("tg", lambda: self._scraper.search(keyword), self._scraper))
         if self._site_scraper:
-            source_calls.append((
-                "site", lambda: self._site_scraper.search(keyword, year=year)[0],
-                self._site_scraper,
-            ))
+            # TV sources are commonly indexed by season premiere year, series
+            # year, or no year at all. Each pass has an independent cache key.
+            # Movies retain their single strict subscription-year query.
+            query_years = site_years if site_years is not None else [year]
+            for query_year in query_years:
+                source_calls.append((
+                    "site", lambda query_year=query_year: self._site_scraper.search(
+                        keyword, year=query_year
+                    )[0], self._site_scraper, query_year,
+                ))
         if self._juying_api:
             source_calls.append((
                 "juying", lambda: self._juying_api.search(keyword, year=year),
-                self._juying_api,
+                self._juying_api, year,
             ))
 
-        for source, callback, client in source_calls:
+        # Retain the historical tuple shape for TG while allowing site passes
+        # to carry their real query year into cache and dry-run diagnostics.
+        source_calls = [
+            item if len(item) == 4 else (item[0], item[1], item[2], year)
+            for item in source_calls
+        ]
+
+        for source, callback, client, source_year in source_calls:
             cache_key = source_cache_key(
-                source, keyword, year, media_type, target_season
+                source, keyword, source_year, media_type, target_season
             )
             cached = self._search_cache.get(cache_key) if self._search_cache else None
             if cached is not None:
@@ -1230,6 +1277,9 @@ class TgSearch115(_PluginBase):
                     except Exception:
                         pass
                 hits.extend(cached)
+                if source == "site" and search_diagnostics is not None:
+                    key = "无年份" if source_year is None else str(source_year)
+                    search_diagnostics[key] = search_diagnostics.get(key, 0) + len(cached)
                 if source_report:
                     source_report.record(source, cached, cached=True)
                 logger.info(
@@ -1254,6 +1304,14 @@ class TgSearch115(_PluginBase):
                         setattr(hit, "_tg115_source", source)
                     except Exception:
                         pass
+                    if source == "site":
+                        try:
+                            setattr(hit, "_tg115_site_query_year", source_year)
+                        except Exception:
+                            pass
+                if source == "site" and search_diagnostics is not None:
+                    key = "无年份" if source_year is None else str(source_year)
+                    search_diagnostics[key] = search_diagnostics.get(key, 0) + len(source_hits)
                 status = getattr(client, "last_error_status", None)
                 if source_report:
                     source_report.record(source, source_hits)
@@ -1528,11 +1586,13 @@ class TgSearch115(_PluginBase):
             resource_title = h.resource_title or ""
             source_title = str(getattr(h, "source_title", "") or "").strip()
             source_year = getattr(h, "year", None)
-            if source_title:
-                identity_title = f"{source_title} ({source_year})" if source_year else source_title
-            else:
-                parsed = TgSearch115._parse_resource_meta(h.text or resource_title)
-                identity_title = parsed.get("display_name") or resource_title
+            parsed = TgSearch115._parse_resource_meta(h.text or resource_title)
+            source_identity = f"{source_title} ({source_year})" if source_title and source_year else source_title
+            identity_title = " ".join(item for item in (
+                source_identity, resource_title, h.text or "", parsed.get("display_name") or ""
+            ) if item).strip()
+            if not identity_title:
+                identity_title = resource_title or "未命名资源"
             display_title = identity_title or resource_title or "未命名资源"
             if resource_title and resource_title not in display_title:
                 display_title = f"{display_title} {resource_title}"

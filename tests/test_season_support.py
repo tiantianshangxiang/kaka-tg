@@ -46,6 +46,12 @@ class SeasonSupportTest(unittest.TestCase):
         key3 = season.source_cache_key("site", "示例", 2022, "TV", 3)
         self.assertEqual(3, len({key0, key2, key3}))
 
+    def test_cache_key_distinguishes_season_year_passes(self):
+        s02_2024 = season.source_cache_key("site", "Silo S02", 2024, "TV", 2)
+        s03_2026 = season.source_cache_key("site", "Silo S03", 2026, "TV", 3)
+        unyear = season.source_cache_key("site", "Silo S03", None, "TV", 3)
+        self.assertEqual(3, len({s02_2024, s03_2026, unyear}))
+
     def test_season_keywords_include_aliases_and_are_bounded(self):
         keywords = season.season_keywords(
             ["权力的游戏前传：龙族", "龙之家族", "House of the Dragon"], 2, limit=6
